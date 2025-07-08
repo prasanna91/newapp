@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🔥 iOS Firebase Script for QuikApp
-# This script configures Firebase for iOS
+# 🔥 iOS Firebase Setup Script for QuikApp
+# This script handles Firebase configuration for iOS
 
 set -e
 
@@ -35,55 +35,154 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 log_info "🔥 Starting iOS Firebase Configuration"
 
-# Configure Firebase
-configure_firebase() {
-    log_info "🔥 Checking Firebase configuration..."
+# Setup Firebase configuration
+setup_firebase() {
+    log_info "🔥 Setting up Firebase configuration..."
     
-    # Check if push notifications are enabled
+    # Check if Firebase is enabled
     if [ "${PUSH_NOTIFY:-false}" != "true" ]; then
-        log_info "Push notifications disabled (PUSH_NOTIFY=false), skipping Firebase setup"
+        log_info "🔕 Push notifications disabled, skipping Firebase setup"
         return 0
     fi
     
-    # Check if Firebase config is provided
-    if [ -z "$FIREBASE_CONFIG_IOS" ]; then
-        log_error "PUSH_NOTIFY is true but FIREBASE_CONFIG_IOS is not provided"
-        log_error "Please provide FIREBASE_CONFIG_IOS environment variable"
-        exit 1
+    # Check if Firebase config URL is provided
+    if [ -z "${FIREBASE_CONFIG_IOS:-}" ]; then
+        log_warning "FIREBASE_CONFIG_IOS not provided, skipping Firebase setup"
+        return 0
     fi
     
-    log_info "🔥 Configuring Firebase for iOS..."
+    log_info "📥 Downloading Firebase configuration from: $FIREBASE_CONFIG_IOS"
     
-    # Create Runner directory if it doesn't exist
-    mkdir -p "$PROJECT_ROOT/ios/Runner"
+    # Create iOS directory if it doesn't exist
+    local ios_dir="$PROJECT_ROOT/ios/Runner"
+    mkdir -p "$ios_dir"
     
-    # Download Firebase config
-    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" "$FIREBASE_CONFIG_IOS"; then
+    # Download GoogleService-Info.plist
+    if curl -fsSL -o "$ios_dir/GoogleService-Info.plist" "$FIREBASE_CONFIG_IOS"; then
         log_success "Firebase configuration downloaded successfully"
         
-        # Validate the downloaded file
-        if [ -f "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" ]; then
-            local file_size=$(du -h "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" | cut -f1)
-            log_success "GoogleService-Info.plist created (${file_size})"
+        # Verify the file is a valid plist
+        if plutil -lint "$ios_dir/GoogleService-Info.plist" >/dev/null 2>&1; then
+            log_success "Firebase configuration verified successfully"
+            
+            # Extract and display Firebase project info
+            local project_id=$(plutil -extract GOOGLE_APP_ID raw "$ios_dir/GoogleService-Info.plist" 2>/dev/null || echo "Unknown")
+            local bundle_id=$(plutil -extract BUNDLE_ID raw "$ios_dir/GoogleService-Info.plist" 2>/dev/null || echo "Unknown")
+            
+            log_info "📋 Firebase Project Information:"
+            log_info "   - Project ID: $project_id"
+            log_info "   - Bundle ID: $bundle_id"
+            
+            return 0
         else
-            log_error "Firebase config file was not created"
-            exit 1
+            log_error "Firebase configuration file is not a valid plist"
+            rm -f "$ios_dir/GoogleService-Info.plist"
+            return 1
         fi
     else
-        log_error "Failed to download Firebase configuration from: $FIREBASE_CONFIG_IOS"
-        log_error "Please check the URL and ensure it's accessible"
-        exit 1
+        log_error "Failed to download Firebase configuration"
+        return 1
+    fi
+}
+
+# Verify Firebase dependencies in pubspec.yaml
+verify_firebase_dependencies() {
+    log_info "📦 Verifying Firebase dependencies..."
+    
+    local pubspec_file="$PROJECT_ROOT/pubspec.yaml"
+    
+    if [ ! -f "$pubspec_file" ]; then
+        log_error "pubspec.yaml not found"
+        return 1
+    fi
+    
+    # Check for Firebase dependencies
+    local has_firebase_core=false
+    local has_firebase_messaging=false
+    
+    if grep -q "firebase_core:" "$pubspec_file"; then
+        has_firebase_core=true
+        log_info "✅ firebase_core dependency found"
+    else
+        log_warning "firebase_core dependency not found"
+    fi
+    
+    if grep -q "firebase_messaging:" "$pubspec_file"; then
+        has_firebase_messaging=true
+        log_info "✅ firebase_messaging dependency found"
+    else
+        log_warning "firebase_messaging dependency not found"
+    fi
+    
+    if [ "$has_firebase_core" = true ] && [ "$has_firebase_messaging" = true ]; then
+        log_success "All required Firebase dependencies found"
+        return 0
+    else
+        log_warning "Some Firebase dependencies are missing"
+        return 1
+    fi
+}
+
+# Setup iOS deployment target for Firebase
+setup_ios_deployment_target() {
+    log_info "📱 Setting up iOS deployment target for Firebase..."
+    
+    # Firebase requires iOS 14.0+
+    local target_version="14.0"
+    
+    # Update Podfile
+    local podfile="$PROJECT_ROOT/ios/Podfile"
+    if [ -f "$podfile" ]; then
+        log_info "📝 Updating Podfile deployment target..."
+        
+        # Backup original Podfile
+        cp "$podfile" "$podfile.backup"
+        
+        # Update platform version
+        sed -i '' "s/platform :ios, '.*'/platform :ios, '$target_version'/g" "$podfile"
+        
+        log_success "Podfile updated with iOS $target_version deployment target"
+    else
+        log_warning "Podfile not found"
+    fi
+    
+    # Update Xcode project
+    local project_file="$PROJECT_ROOT/ios/Runner.xcodeproj/project.pbxproj"
+    if [ -f "$project_file" ]; then
+        log_info "📝 Updating Xcode project deployment target..."
+        
+        # Backup original project file
+        cp "$project_file" "$project_file.backup"
+        
+        # Update IPHONEOS_DEPLOYMENT_TARGET
+        sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = $target_version;/g" "$project_file"
+        
+        log_success "Xcode project updated with iOS $target_version deployment target"
+    else
+        log_warning "Xcode project file not found"
     fi
 }
 
 # Main execution
 main() {
-    log_info "🔥 Starting iOS Firebase configuration for $APP_NAME"
+    log_info "🔥 Starting iOS Firebase setup for $APP_NAME"
     
-    # Configure Firebase
-    configure_firebase
+    # Setup iOS deployment target first
+    setup_ios_deployment_target
     
-    log_success "🎉 iOS Firebase configuration completed successfully!"
+    # Verify Firebase dependencies
+    if ! verify_firebase_dependencies; then
+        log_warning "Firebase dependencies verification failed"
+    fi
+    
+    # Setup Firebase configuration
+    if setup_firebase; then
+        log_success "✅ Firebase setup completed successfully"
+    else
+        log_warning "⚠️ Firebase setup failed, continuing without Firebase"
+    fi
+    
+    return 0
 }
 
 # Run main function

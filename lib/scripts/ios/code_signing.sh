@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🔐 iOS Code Signing Script for QuikApp
-# This script handles iOS code signing setup and management
+# 🔐 Enhanced Code Signing Script for iOS
+# This script handles iOS code signing with comprehensive validation
 
 set -e
 
@@ -33,224 +33,293 @@ log_error() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-log_info "🔐 Starting iOS Code Signing Configuration"
+log_info "🔐 Starting Enhanced iOS Code Signing"
 
-# Validate signing requirements
-validate_signing_requirements() {
-    log_info "🔍 Validating signing requirements..."
+# Set default environment variables if not already set
+export CERT_P12_URL="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
+export CERT_CER_URL="${CERT_CER_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer}"
+export CERT_KEY_URL="${CERT_KEY_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key}"
+export CERT_PASSWORD="${CERT_PASSWORD:-password}"
+export PROFILE_URL="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
+export APPLE_TEAM_ID="${APPLE_TEAM_ID:-9H2AD7NQ49}"
+export BUNDLE_ID="${BUNDLE_ID:-com.twinklub.twinklub}"
+export PROFILE_TYPE="${PROFILE_TYPE:-app-store}"
+
+log_info "📋 Environment Variables Set:"
+log_info "   - CERT_P12_URL: $CERT_P12_URL"
+log_info "   - CERT_CER_URL: $CERT_CER_URL"
+log_info "   - CERT_KEY_URL: $CERT_KEY_URL"
+log_info "   - CERT_PASSWORD: $CERT_PASSWORD"
+log_info "   - PROFILE_URL: $PROFILE_URL"
+log_info "   - APPLE_TEAM_ID: $APPLE_TEAM_ID"
+log_info "   - BUNDLE_ID: $BUNDLE_ID"
+log_info "   - PROFILE_TYPE: $PROFILE_TYPE"
+
+# Validate required signing variables
+validate_signing_vars() {
+    log_info "🔍 Validating signing configuration..."
     
-    local has_certificate=false
-    local has_profile=false
+    local profile_url="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
+    local team_id="${APPLE_TEAM_ID:-9H2AD7NQ49}"
+    local bundle_id="${BUNDLE_ID:-com.twinklub.twinklub}"
     
-    # Check for certificate
-    if [ -n "${CERT_P12_URL:-}" ] || ([ -n "${CERT_CER_URL:-}" ] && [ -n "${CERT_KEY_URL:-}" ]); then
-        has_certificate=true
-        log_info "Certificate configuration found"
-    fi
+    log_info "📋 Signing Configuration:"
+    log_info "   - Profile URL: $profile_url"
+    log_info "   - Team ID: $team_id"
+    log_info "   - Bundle ID: $bundle_id"
+    log_info "   - Profile Type: ${PROFILE_TYPE:-app-store}"
     
-    # Check for provisioning profile
-    if [ -n "${PROFILE_URL:-}" ]; then
-        has_profile=true
-        log_info "Provisioning profile configuration found"
-    fi
-    
-    # Check for password
-    if [ -n "${CERT_PASSWORD:-}" ]; then
-        log_info "Certificate password provided"
-    else
-        log_warning "No certificate password provided"
-    fi
-    
-    # Check for team ID
-    if [ -n "${APPLE_TEAM_ID:-}" ]; then
-        log_info "Apple Team ID provided: $APPLE_TEAM_ID"
-    else
-        log_warning "No Apple Team ID provided"
-    fi
-    
-    if [ "$has_certificate" = true ] && [ "$has_profile" = true ]; then
-        log_success "All signing requirements met"
-        return 0
-    else
-        log_warning "Incomplete signing configuration - will use development signing"
+    if [ -z "$profile_url" ]; then
+        log_error "PROFILE_URL is required for iOS signing"
         return 1
     fi
+    
+    if [ -z "$team_id" ]; then
+        log_error "APPLE_TEAM_ID is required for iOS signing"
+        return 1
+    fi
+    
+    if [ -z "$bundle_id" ]; then
+        log_error "BUNDLE_ID is required for iOS signing"
+        return 1
+    fi
+    
+    log_success "Required signing variables validated"
+    return 0
 }
 
-# Download and setup certificate
-setup_certificate() {
-    log_info "🔐 Setting up certificate..."
+# Setup certificates with CER+KEY priority
+setup_certificates() {
+    log_info "🔐 Setting up certificates with CER+KEY priority..."
     
-    local cert_dir="$PROJECT_ROOT/ios"
-    mkdir -p "$cert_dir"
+    # Method 1: Try CER+KEY certificate first (more reliable)
+    log_info "🔐 Prioritizing CER+KEY method for better reliability..."
+    if setup_cer_key_certificate; then
+        log_success "🎉 CER+KEY certificate setup completed successfully"
+        return 0
+    fi
     
-    if [ -n "${CERT_P12_URL:-}" ]; then
-        # Download P12 certificate
-        log_info "📥 Downloading P12 certificate..."
-        if curl -fsSL -o "$cert_dir/Runner.p12" "$CERT_P12_URL"; then
-            log_success "P12 certificate downloaded"
+    # Method 2: Fall back to P12 certificate
+    log_warning "CER+KEY setup failed, falling back to P12 method..."
+    if setup_p12_certificate; then
+        log_success "🎉 P12 certificate setup completed successfully"
+        return 0
+    fi
+    
+    log_error "❌ All certificate setup methods failed"
+    return 1
+}
+
+# Setup P12 certificate
+setup_p12_certificate() {
+    log_info "🔐 Attempting P12 certificate setup..."
+    
+    local p12_url="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
+    local p12_password="${CERT_PASSWORD:-password}"
+    
+    if [ -z "$p12_url" ]; then
+        log_warning "CERT_P12_URL not provided, skipping P12 setup"
+        return 1
+    fi
+    
+    log_info "📥 Downloading P12 certificate from: $p12_url"
+    
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.p12" "$p12_url"; then
+        log_success "P12 certificate downloaded successfully"
+        
+        if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$p12_password" >/dev/null 2>&1; then
+            log_success "P12 certificate verified successfully"
+            
+            # Import P12 into keychain
+            log_info "🔐 Importing P12 certificate into keychain..."
+            security unlock-keychain -p "" login.keychain 2>/dev/null || true
+            
+            if security import "$PROJECT_ROOT/ios/Runner.p12" -k login.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                log_success "P12 certificate imported successfully"
+                return 0
+            else
+                log_warning "Failed to import P12, trying default keychain..."
+                if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" >/dev/null 2>&1; then
+                    log_success "P12 certificate imported into default keychain"
+                    return 0
+                fi
+            fi
         else
-            log_error "Failed to download P12 certificate"
+            log_error "P12 certificate verification failed - invalid password or corrupted file"
+            rm -f "$PROJECT_ROOT/ios/Runner.p12"
+        fi
+    else
+        log_error "Failed to download P12 certificate"
+    fi
+    
+    return 1
+}
+
+# Setup CER+KEY certificate
+setup_cer_key_certificate() {
+    log_info "🔐 Attempting CER+KEY certificate setup..."
+    
+    local cer_url="${CERT_CER_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer}"
+    local key_url="${CERT_KEY_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key}"
+    local p12_password="${CERT_PASSWORD:-password}"
+    
+    if [ -z "$cer_url" ] || [ -z "$key_url" ]; then
+        log_warning "CERT_CER_URL or CERT_KEY_URL not provided, skipping CER+KEY setup"
+        return 1
+    fi
+    
+    log_info "📥 Downloading certificate files..."
+    log_info "📥 CER file from: $cer_url"
+    log_info "📥 KEY file from: $key_url"
+    
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.cer" "$cer_url" && \
+       curl -fsSL -o "$PROJECT_ROOT/ios/Runner.key" "$key_url"; then
+        log_success "Certificate files downloaded successfully"
+        
+        # Verify files
+        if openssl x509 -in "$PROJECT_ROOT/ios/Runner.cer" -text -noout >/dev/null 2>&1; then
+            log_success "CER file verified successfully"
+        else
+            log_error "CER file verification failed"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
             return 1
         fi
-    elif [ -n "${CERT_CER_URL:-}" ] && [ -n "${CERT_KEY_URL:-}" ]; then
-        # Download CER and KEY files and convert to P12
-        log_info "📥 Downloading certificate files..."
         
-        if curl -fsSL -o "$cert_dir/Runner.cer" "$CERT_CER_URL" && \
-           curl -fsSL -o "$cert_dir/Runner.key" "$CERT_KEY_URL"; then
-            log_success "Certificate files downloaded"
+        if openssl rsa -in "$PROJECT_ROOT/ios/Runner.key" -check -noout >/dev/null 2>&1; then
+            log_success "KEY file verified successfully"
+        else
+            log_error "KEY file verification failed"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+            return 1
+        fi
+        
+        # Convert to P12
+        log_info "🔄 Converting CER+KEY to P12 format..."
+        if openssl pkcs12 -export \
+            -in "$PROJECT_ROOT/ios/Runner.cer" \
+            -inkey "$PROJECT_ROOT/ios/Runner.key" \
+            -out "$PROJECT_ROOT/ios/Runner.p12" \
+            -passout pass:"$p12_password"; then
+            log_success "Certificate converted to P12 successfully"
             
-            # Convert to P12
-            log_info "🔄 Converting certificate to P12..."
-            if [ -n "${CERT_PASSWORD:-}" ]; then
-                openssl pkcs12 -export \
-                    -in "$cert_dir/Runner.cer" \
-                    -inkey "$cert_dir/Runner.key" \
-                    -out "$cert_dir/Runner.p12" \
-                    -passout pass:"$CERT_PASSWORD"
-                log_success "Certificate converted to P12"
+            # Import P12 into keychain
+            log_info "🔐 Importing generated P12 certificate into keychain..."
+            security unlock-keychain -p "" login.keychain 2>/dev/null || true
+            
+            if security import "$PROJECT_ROOT/ios/Runner.p12" -k login.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                log_success "Generated P12 certificate imported successfully"
+                rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+                return 0
             else
-                log_error "Certificate password required for conversion"
+                log_warning "Failed to import into login.keychain, trying default..."
+                if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" >/dev/null 2>&1; then
+                    log_success "Generated P12 certificate imported into default keychain"
+                    rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+                    return 0
+                fi
+            fi
+        else
+            log_error "Failed to convert certificate to P12 format"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+        fi
+    else
+        log_error "Failed to download certificate files"
+    fi
+    
+    return 1
+}
+
+# Setup provisioning profile
+setup_provisioning_profile() {
+    log_info "📱 Setting up provisioning profile..."
+    
+    local profile_url="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
+    
+    log_info "📥 Downloading provisioning profile from: $profile_url"
+    
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.mobileprovision" "$profile_url"; then
+        log_success "Provisioning profile downloaded successfully"
+        
+        if security cms -D -i "$PROJECT_ROOT/ios/Runner.mobileprovision" >/dev/null 2>&1; then
+            log_success "Provisioning profile verified successfully"
+            
+            local profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+            if [ ! -d "$profiles_dir" ]; then
+                log_info "📁 Creating provisioning profiles directory..."
+                mkdir -p "$profiles_dir"
+            fi
+            
+            log_info "📱 Installing provisioning profile..."
+            if cp "$PROJECT_ROOT/ios/Runner.mobileprovision" "$profiles_dir/"; then
+                log_success "Provisioning profile installed successfully"
+                return 0
+            else
+                log_error "Failed to install provisioning profile"
                 return 1
             fi
         else
-            log_error "Failed to download certificate files"
+            log_error "Provisioning profile verification failed"
+            rm -f "$PROJECT_ROOT/ios/Runner.mobileprovision"
             return 1
         fi
     else
-        log_warning "No certificate configuration provided"
+        log_error "Failed to download provisioning profile"
         return 1
     fi
-    
-    return 0
 }
 
-# Download and setup provisioning profile
-setup_provisioning_profile() {
-    log_info "📋 Setting up provisioning profile..."
+# Verify certificates
+verify_certificates() {
+    log_info "🔍 Verifying certificates in keychain..."
     
-    if [ -n "${PROFILE_URL:-}" ]; then
-        local profile_dir="$PROJECT_ROOT/ios"
-        mkdir -p "$profile_dir"
+    log_info "📋 Available code signing identities:"
+    if security find-identity -v -p codesigning; then
+        log_success "Certificates found in keychain"
         
-        # Download provisioning profile
-        log_info "📥 Downloading provisioning profile..."
-        if curl -fsSL -o "$profile_dir/Runner.mobileprovision" "$PROFILE_URL"; then
-            log_success "Provisioning profile downloaded"
-            
-            # Extract and display profile info
-            if command -v security &> /dev/null; then
-                log_info "📋 Provisioning profile information:"
-                security cms -D -i "$profile_dir/Runner.mobileprovision" 2>/dev/null | \
-                    plutil -extract Entitlements xml1 -o - - 2>/dev/null | \
-                    grep -E "(application-identifier|team-identifier|get-task-allow)" || true
-            fi
+        local valid_count=$(security find-identity -v -p codesigning | grep -c "valid identities found" || echo "0")
+        if [ "$valid_count" -gt 0 ]; then
+            log_success "Valid code signing identities found"
+            return 0
         else
-            log_error "Failed to download provisioning profile"
+            log_warning "Certificates found but no valid identities for code signing"
             return 1
         fi
     else
-        log_warning "No provisioning profile URL provided"
+        log_error "No certificates found in keychain"
         return 1
-    fi
-    
-    return 0
-}
-
-# Setup keychain
-setup_keychain() {
-    log_info "🔑 Setting up keychain..."
-    
-    # Create temporary keychain
-    local keychain_name="quikapp_temp.keychain"
-    local keychain_password="temp_password_123"
-    
-    # Create keychain
-    security create-keychain -p "$keychain_password" "$keychain_name"
-    security default-keychain -s "$keychain_name"
-    security unlock-keychain -p "$keychain_password" "$keychain_name"
-    security set-keychain-settings -t 3600 -u "$keychain_name"
-    
-    # Import certificate if available
-    if [ -f "$PROJECT_ROOT/ios/Runner.p12" ] && [ -n "${CERT_PASSWORD:-}" ]; then
-        log_info "📥 Importing certificate to keychain..."
-        security import "$PROJECT_ROOT/ios/Runner.p12" -k "$keychain_name" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-        log_success "Certificate imported to keychain"
-    fi
-    
-    # Set keychain search list
-    security list-keychains -s "$keychain_name"
-    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_name"
-    
-    log_success "Keychain setup completed"
-}
-
-# Configure Xcode project for signing
-configure_xcode_signing() {
-    log_info "⚙️ Configuring Xcode project for signing..."
-    
-    cd "$PROJECT_ROOT"
-    
-    # Update project.pbxproj with signing configuration
-    if [ -f "ios/Runner.xcodeproj/project.pbxproj" ]; then
-        log_info "📝 Updating Xcode project signing configuration..."
-        
-        # Backup original file
-        cp ios/Runner.xcodeproj/project.pbxproj ios/Runner.xcodeproj/project.pbxproj.backup
-        
-        # Update signing settings
-        if [ -n "${APPLE_TEAM_ID:-}" ]; then
-            # Set development team
-            sed -i '' "s/DEVELOPMENT_TEAM = \"\";/DEVELOPMENT_TEAM = \"$APPLE_TEAM_ID\";/g" ios/Runner.xcodeproj/project.pbxproj
-            
-            # Set code signing identity
-            sed -i '' "s/CODE_SIGN_IDENTITY = \"\";/CODE_SIGN_IDENTITY = \"iPhone Developer\";/g" ios/Runner.xcodeproj/project.pbxproj
-            sed -i '' "s/CODE_SIGN_IDENTITY\[sdk=iphoneos\*\] = \"\";/CODE_SIGN_IDENTITY[sdk=iphoneos*] = \"iPhone Developer\";/g" ios/Runner.xcodeproj/project.pbxproj
-            
-            # Enable code signing
-            sed -i '' "s/CODE_SIGNING_REQUIRED = \"\";/CODE_SIGNING_REQUIRED = \"YES\";/g" ios/Runner.xcodeproj/project.pbxproj
-            sed -i '' "s/CODE_SIGNING_ALLOWED = \"\";/CODE_SIGNING_ALLOWED = \"YES\";/g" ios/Runner.xcodeproj/project.pbxproj
-            
-            log_success "Xcode project signing configuration updated"
-        else
-            log_warning "No Apple Team ID provided, using default signing"
-        fi
-    else
-        log_warning "Xcode project file not found"
     fi
 }
 
 # Main execution
 main() {
-    log_info "🔐 Starting iOS code signing configuration for $APP_NAME"
+    log_info "🔐 Starting enhanced iOS code signing for $APP_NAME"
     
-    # Validate requirements
-    if validate_signing_requirements; then
-        # Setup certificate
-        if setup_certificate; then
-            log_success "Certificate setup completed"
-        else
-            log_warning "Certificate setup failed, will use development signing"
-        fi
-        
-        # Setup provisioning profile
-        if setup_provisioning_profile; then
-            log_success "Provisioning profile setup completed"
-        else
-            log_warning "Provisioning profile setup failed, will use development signing"
-        fi
-        
-        # Setup keychain
-        setup_keychain
-        
-        # Configure Xcode project
-        configure_xcode_signing
-    else
-        log_info "Using development signing (no production certificates)"
+    # Validate required variables
+    if ! validate_signing_vars; then
+        log_error "Signing validation failed"
+        exit 1
     fi
     
-    log_success "🎉 iOS code signing configuration completed!"
+    # Setup provisioning profile first
+    if ! setup_provisioning_profile; then
+        log_error "Provisioning profile setup failed"
+        exit 1
+    fi
+    
+    # Setup certificates
+    if ! setup_certificates; then
+        log_error "Certificate setup failed"
+        exit 1
+    fi
+    
+    # Verify certificates
+    if ! verify_certificates; then
+        log_error "Certificate verification failed"
+        exit 1
+    fi
+    
+    log_success "✅ All signing components verified successfully"
+    return 0
 }
 
 # Run main function

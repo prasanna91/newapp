@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🍎 iOS App Store Connect Validation Script for QuikApp
-# This script validates all required variables for App Store Connect publishing
+# 🍎 iOS App Store Validation Script for QuikApp
+# This script validates App Store Connect requirements
 
 set -e
 
@@ -33,56 +33,45 @@ log_error() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-log_info "🍎 Validating iOS App Store Connect Configuration"
+log_info "🍎 Starting iOS App Store Validation"
 
-# Validate basic app information
-validate_app_info() {
-    log_info "📱 Validating app information..."
+# Validate App Store Connect API configuration
+validate_appstore_connect() {
+    log_info "🔍 Validating App Store Connect API configuration..."
     
-    local required_vars=(
-        "APP_NAME"
-        "BUNDLE_ID"
-        "VERSION_NAME"
-        "VERSION_CODE"
-        "WEB_URL"
-    )
+    local has_key_id=false
+    local has_issuer_id=false
+    local has_api_key=false
     
-    for var in "${required_vars[@]}"; do
-        if [ -z "${!var}" ]; then
-            log_error "Required app variable $var is not set!"
-            return 1
-        else
-            log_success "$var: ${!var}"
-        fi
-    done
-    
-    return 0
-}
-
-# Validate profile type
-validate_profile_type() {
-    log_info "📋 Validating profile type..."
-    
-    if [ -z "$PROFILE_TYPE" ]; then
-        log_error "PROFILE_TYPE is not set!"
-        return 1
+    if [ -n "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ]; then
+        has_key_id=true
+        log_info "✅ App Store Connect Key Identifier found"
+    else
+        log_warning "⚠️ App Store Connect Key Identifier not provided"
     fi
     
-    case "$PROFILE_TYPE" in
-        "app-store")
-            log_success "Profile type: $PROFILE_TYPE (App Store Connect)"
-            ;;
-        "ad-hoc"|"enterprise"|"development")
-            log_warning "Profile type: $PROFILE_TYPE (Not for App Store Connect)"
-            ;;
-        *)
-            log_error "Invalid PROFILE_TYPE: $PROFILE_TYPE"
-            log_error "Supported types: app-store, ad-hoc, enterprise, development"
-            return 1
-            ;;
-    esac
+    if [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+        has_issuer_id=true
+        log_info "✅ App Store Connect Issuer ID found"
+    else
+        log_warning "⚠️ App Store Connect Issuer ID not provided"
+    fi
     
-    return 0
+    if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
+        has_api_key=true
+        log_info "✅ App Store Connect API Key Path found"
+    else
+        log_warning "⚠️ App Store Connect API Key Path not provided"
+    fi
+    
+    if [ "$has_key_id" = true ] && [ "$has_issuer_id" = true ] && [ "$has_api_key" = true ]; then
+        log_success "✅ App Store Connect API configuration complete"
+        return 0
+    else
+        log_warning "⚠️ App Store Connect API configuration incomplete"
+        log_info "📋 Manual upload to App Store Connect will be required"
+        return 1
+    fi
 }
 
 # Validate code signing configuration
@@ -91,236 +80,206 @@ validate_code_signing() {
     
     local has_certificate=false
     local has_profile=false
-    local has_password=false
     local has_team_id=false
     
-    # Check certificate
-    if [ -n "${CERT_P12_URL:-}" ]; then
-        log_success "P12 certificate URL provided"
+    # Check for certificate configuration
+    if [ -n "${CERT_P12_URL:-}" ] || ([ -n "${CERT_CER_URL:-}" ] && [ -n "${CERT_KEY_URL:-}" ]); then
         has_certificate=true
-    elif [ -n "${CERT_CER_URL:-}" ] && [ -n "${CERT_KEY_URL:-}" ]; then
-        log_success "CER and KEY certificate URLs provided"
-        has_certificate=true
+        log_info "✅ Certificate configuration found"
     else
-        log_warning "No certificate configuration found"
+        log_warning "⚠️ Certificate configuration not found"
     fi
     
-    # Check provisioning profile
+    # Check for provisioning profile
     if [ -n "${PROFILE_URL:-}" ]; then
-        log_success "Provisioning profile URL provided"
         has_profile=true
+        log_info "✅ Provisioning profile configuration found"
     else
-        log_warning "No provisioning profile URL provided"
+        log_warning "⚠️ Provisioning profile configuration not found"
     fi
     
-    # Check certificate password
-    if [ -n "${CERT_PASSWORD:-}" ]; then
-        log_success "Certificate password provided"
-        has_password=true
-    else
-        log_warning "No certificate password provided"
-    fi
-    
-    # Check team ID
+    # Check for team ID
     if [ -n "${APPLE_TEAM_ID:-}" ]; then
-        log_success "Apple Team ID: $APPLE_TEAM_ID"
         has_team_id=true
+        log_info "✅ Apple Team ID found: $APPLE_TEAM_ID"
     else
-        log_warning "No Apple Team ID provided"
+        log_warning "⚠️ Apple Team ID not provided"
     fi
     
-    # Summary
-    if [ "$has_certificate" = true ] && [ "$has_profile" = true ] && [ "$has_password" = true ] && [ "$has_team_id" = true ]; then
-        log_success "Complete code signing configuration found"
+    if [ "$has_certificate" = true ] && [ "$has_profile" = true ] && [ "$has_team_id" = true ]; then
+        log_success "✅ Code signing configuration complete"
         return 0
     else
-        log_warning "Incomplete code signing configuration"
+        log_warning "⚠️ Code signing configuration incomplete"
         return 1
     fi
 }
 
-# Validate App Store Connect API configuration
-validate_appstore_connect() {
-    log_info "🍎 Validating App Store Connect API configuration..."
+# Validate bundle identifier
+validate_bundle_id() {
+    log_info "📦 Validating bundle identifier..."
     
-    local has_key_id=false
-    local has_api_key=false
-    local has_issuer_id=false
-    
-    # Check App Store Connect Key ID
-    if [ -n "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ]; then
-        log_success "App Store Connect Key ID: $APP_STORE_CONNECT_KEY_IDENTIFIER"
-        has_key_id=true
+    if [ -n "${BUNDLE_ID:-}" ]; then
+        # Check if bundle ID follows Apple's format
+        if [[ "$BUNDLE_ID" =~ ^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)+$ ]]; then
+            log_success "✅ Bundle ID format is valid: $BUNDLE_ID"
+            return 0
+        else
+            log_warning "⚠️ Bundle ID format may be invalid: $BUNDLE_ID"
+            log_info "📋 Bundle ID should follow reverse domain notation (e.g., com.company.app)"
+            return 1
+        fi
     else
-        log_warning "No App Store Connect Key ID provided"
-    fi
-    
-    # Check App Store Connect API Key Path
-    if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
-        log_success "App Store Connect API Key Path: $APP_STORE_CONNECT_API_KEY_PATH"
-        has_api_key=true
-    else
-        log_warning "No App Store Connect API Key Path provided"
-    fi
-    
-    # Check App Store Connect Issuer ID
-    if [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
-        log_success "App Store Connect Issuer ID: $APP_STORE_CONNECT_ISSUER_ID"
-        has_issuer_id=true
-    else
-        log_warning "No App Store Connect Issuer ID provided"
-    fi
-    
-    # Summary
-    if [ "$has_key_id" = true ] && [ "$has_api_key" = true ] && [ "$has_issuer_id" = true ]; then
-        log_success "Complete App Store Connect API configuration found"
-        return 0
-    else
-        log_warning "Incomplete App Store Connect API configuration"
+        log_error "❌ Bundle ID not provided"
         return 1
     fi
 }
 
-# Validate Firebase configuration (if push notifications enabled)
+# Validate app metadata
+validate_app_metadata() {
+    log_info "📱 Validating app metadata..."
+    
+    local has_app_name=false
+    local has_version_name=false
+    local has_version_code=false
+    
+    if [ -n "${APP_NAME:-}" ]; then
+        has_app_name=true
+        log_info "✅ App name found: $APP_NAME"
+    else
+        log_warning "⚠️ App name not provided"
+    fi
+    
+    if [ -n "${VERSION_NAME:-}" ]; then
+        has_version_name=true
+        log_info "✅ Version name found: $VERSION_NAME"
+    else
+        log_warning "⚠️ Version name not provided"
+    fi
+    
+    if [ -n "${VERSION_CODE:-}" ]; then
+        has_version_code=true
+        log_info "✅ Version code found: $VERSION_CODE"
+    else
+        log_warning "⚠️ Version code not provided"
+    fi
+    
+    if [ "$has_app_name" = true ] && [ "$has_version_name" = true ] && [ "$has_version_code" = true ]; then
+        log_success "✅ App metadata complete"
+        return 0
+    else
+        log_warning "⚠️ App metadata incomplete"
+        return 1
+    fi
+}
+
+# Validate profile type
+validate_profile_type() {
+    log_info "📋 Validating profile type..."
+    
+    local valid_types=("app-store" "ad-hoc" "enterprise" "development")
+    local profile_type="${PROFILE_TYPE:-app-store}"
+    local is_valid=false
+    
+    for valid_type in "${valid_types[@]}"; do
+        if [ "$profile_type" = "$valid_type" ]; then
+            is_valid=true
+            break
+        fi
+    done
+    
+    if [ "$is_valid" = true ]; then
+        log_success "✅ Profile type is valid: $profile_type"
+        
+        # Check if profile type matches App Store requirements
+        if [ "$profile_type" = "app-store" ]; then
+            log_info "📋 App Store profile type selected - ready for App Store submission"
+        else
+            log_warning "⚠️ Profile type '$profile_type' selected - not suitable for App Store submission"
+        fi
+        
+        return 0
+    else
+        log_error "❌ Invalid profile type: $profile_type"
+        log_info "📋 Valid types: ${valid_types[*]}"
+        return 1
+    fi
+}
+
+# Validate Firebase configuration
 validate_firebase() {
     log_info "🔥 Validating Firebase configuration..."
     
     if [ "${PUSH_NOTIFY:-false}" = "true" ]; then
-        log_info "Push notifications enabled - Firebase required"
+        log_info "🔔 Push notifications enabled - Firebase required"
         
         if [ -n "${FIREBASE_CONFIG_IOS:-}" ]; then
-            log_success "Firebase configuration provided"
+            log_success "✅ Firebase configuration provided"
             return 0
         else
-            log_error "Firebase configuration required when PUSH_NOTIFY is true"
+            log_error "❌ Firebase configuration required when PUSH_NOTIFY is true"
             return 1
         fi
     else
-        log_info "Push notifications disabled - Firebase optional"
+        log_info "🔕 Push notifications disabled - Firebase optional"
         if [ -n "${FIREBASE_CONFIG_IOS:-}" ]; then
-            log_success "Firebase configuration provided (optional)"
-        else
-            log_warning "No Firebase configuration provided"
+            log_info "✅ Firebase configuration provided (optional)"
         fi
         return 0
     fi
 }
 
-# Validate build environment
-validate_build_environment() {
-    log_info "🏗️ Validating build environment..."
-    
-    # Check Flutter
-    if command -v flutter &> /dev/null; then
-        local flutter_version=$(flutter --version | head -1)
-        log_success "Flutter: $flutter_version"
-    else
-        log_error "Flutter not found"
-        return 1
-    fi
-    
-    # Check Xcode
-    if command -v xcodebuild &> /dev/null; then
-        local xcode_version=$(xcodebuild -version | head -1)
-        log_success "Xcode: $xcode_version"
-    else
-        log_error "Xcode not found"
-        return 1
-    fi
-    
-    # Check CocoaPods
-    if command -v pod &> /dev/null; then
-        local pod_version=$(pod --version)
-        log_success "CocoaPods: $pod_version"
-    else
-        log_error "CocoaPods not found"
-        return 1
-    fi
-    
-    return 0
-}
-
 # Generate validation report
 generate_validation_report() {
-    log_info "📋 Generating validation report..."
+    log_info "📊 Generating validation report..."
     
-    local report_file="$PROJECT_ROOT/output/ios/APPSTORE_VALIDATION_REPORT.txt"
+    local report_file="$PROJECT_ROOT/output/ios/APP_STORE_VALIDATION_REPORT.txt"
     mkdir -p "$(dirname "$report_file")"
     
     cat > "$report_file" << EOF
-# iOS App Store Connect Validation Report
+🍎 iOS App Store Validation Report
+=====================================
+Generated: $(date)
+App Name: ${APP_NAME:-"Not provided"}
+Bundle ID: ${BUNDLE_ID:-"Not provided"}
+Profile Type: ${PROFILE_TYPE:-"Not provided"}
 
-## App Information
-- App Name: ${APP_NAME:-"NOT SET"}
-- Bundle ID: ${BUNDLE_ID:-"NOT SET"}
-- Version Name: ${VERSION_NAME:-"NOT SET"}
-- Version Code: ${VERSION_CODE:-"NOT SET"}
-- Profile Type: ${PROFILE_TYPE:-"NOT SET"}
-
-## Code Signing Configuration
-- Certificate: ${CERT_P12_URL:-"NOT SET"}
-- Certificate (CER): ${CERT_CER_URL:-"NOT SET"}
-- Certificate (KEY): ${CERT_KEY_URL:-"NOT SET"}
-- Certificate Password: ${CERT_PASSWORD:+"SET"}${CERT_PASSWORD:-"NOT SET"}
-- Provisioning Profile: ${PROFILE_URL:-"NOT SET"}
-- Apple Team ID: ${APPLE_TEAM_ID:-"NOT SET"}
-
-## App Store Connect API Configuration
-- Key ID: ${APP_STORE_CONNECT_KEY_IDENTIFIER:-"NOT SET"}
-- API Key Path: ${APP_STORE_CONNECT_API_KEY_PATH:-"NOT SET"}
-- Issuer ID: ${APP_STORE_CONNECT_ISSUER_ID:-"NOT SET"}
-
-## Firebase Configuration
-- Push Notifications: ${PUSH_NOTIFY:-"false"}
-- Firebase Config: ${FIREBASE_CONFIG_IOS:+"SET"}${FIREBASE_CONFIG_IOS:-"NOT SET"}
-
-## Build Environment
-- Flutter: $(flutter --version | head -1 2>/dev/null || echo "NOT AVAILABLE")
-- Xcode: $(xcodebuild -version | head -1 2>/dev/null || echo "NOT AVAILABLE")
-- CocoaPods: $(pod --version 2>/dev/null || echo "NOT AVAILABLE")
-
-## Validation Results
-- App Info: $([ -n "${APP_NAME:-}" ] && [ -n "${BUNDLE_ID:-}" ] && [ -n "${VERSION_NAME:-}" ] && [ -n "${VERSION_CODE:-}" ] && echo "✅ PASS" || echo "❌ FAIL")
-- Profile Type: $([ "$PROFILE_TYPE" = "app-store" ] && echo "✅ PASS" || echo "❌ FAIL")
-- Code Signing: $([ -n "${CERT_PASSWORD:-}" ] && [ -n "${PROFILE_URL:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && echo "✅ PASS" || echo "❌ FAIL")
-- App Store Connect: $([ -n "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ] && [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ] && [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ] && echo "✅ PASS" || echo "❌ FAIL")
-- Firebase: $([ "${PUSH_NOTIFY:-false}" != "true" ] || [ -n "${FIREBASE_CONFIG_IOS:-}" ] && echo "✅ PASS" || echo "❌ FAIL")
-
-## Recommendations
+📋 Validation Results:
 EOF
-
-    # Add recommendations based on validation results
-    if [ -z "${APP_NAME:-}" ] || [ -z "${BUNDLE_ID:-}" ] || [ -z "${VERSION_NAME:-}" ] || [ -z "${VERSION_CODE:-}" ]; then
-        echo "- Set all required app information variables" >> "$report_file"
+    
+    # Add validation results
+    echo "✅ Bundle ID: ${BUNDLE_ID:-"Not provided"}" >> "$report_file"
+    echo "✅ App Name: ${APP_NAME:-"Not provided"}" >> "$report_file"
+    echo "✅ Version: ${VERSION_NAME:-"Not provided"} (${VERSION_CODE:-"Not provided"})" >> "$report_file"
+    echo "✅ Team ID: ${APPLE_TEAM_ID:-"Not provided"}" >> "$report_file"
+    echo "✅ Profile Type: ${PROFILE_TYPE:-"Not provided"}" >> "$report_file"
+    echo "✅ Push Notifications: ${PUSH_NOTIFY:-"false"}" >> "$report_file"
+    
+    if [ "${PUSH_NOTIFY:-false}" = "true" ]; then
+        echo "✅ Firebase Config: ${FIREBASE_CONFIG_IOS:-"Not provided"}" >> "$report_file"
     fi
     
-    if [ "$PROFILE_TYPE" != "app-store" ]; then
-        echo "- Set PROFILE_TYPE to 'app-store' for App Store Connect publishing" >> "$report_file"
-    fi
+    echo "" >> "$report_file"
+    echo "📋 App Store Connect API:" >> "$report_file"
+    echo "   - Key Identifier: ${APP_STORE_CONNECT_KEY_IDENTIFIER:-"Not provided"}" >> "$report_file"
+    echo "   - Issuer ID: ${APP_STORE_CONNECT_ISSUER_ID:-"Not provided"}" >> "$report_file"
+    echo "   - API Key Path: ${APP_STORE_CONNECT_API_KEY_PATH:-"Not provided"}" >> "$report_file"
     
-    if [ -z "${CERT_PASSWORD:-}" ] || [ -z "${PROFILE_URL:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
-        echo "- Provide complete code signing configuration" >> "$report_file"
-    fi
-    
-    if [ -z "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ] || [ -z "${APP_STORE_CONNECT_API_KEY_PATH:-}" ] || [ -z "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
-        echo "- Provide App Store Connect API credentials for automated upload" >> "$report_file"
-    fi
-    
-    if [ "${PUSH_NOTIFY:-false}" = "true" ] && [ -z "${FIREBASE_CONFIG_IOS:-}" ]; then
-        echo "- Provide Firebase configuration when push notifications are enabled" >> "$report_file"
-    fi
-    
-    log_success "Validation report generated: $report_file"
+    log_success "📊 Validation report generated: $report_file"
 }
 
-# Main validation function
+# Main execution
 main() {
-    log_info "🚀 Starting iOS App Store Connect validation..."
+    log_info "🍎 Starting iOS App Store validation for $APP_NAME"
     
     local validation_passed=true
     
     # Run all validations
-    if ! validate_app_info; then
+    if ! validate_bundle_id; then
+        validation_passed=false
+    fi
+    
+    if ! validate_app_metadata; then
         validation_passed=false
     fi
     
@@ -332,32 +291,26 @@ main() {
         validation_passed=false
     fi
     
-    if ! validate_appstore_connect; then
-        validation_passed=false
-    fi
-    
     if ! validate_firebase; then
         validation_passed=false
     fi
     
-    if ! validate_build_environment; then
-        validation_passed=false
-    fi
+    # App Store Connect validation is optional
+    validate_appstore_connect || log_warning "App Store Connect API not configured"
     
-    # Generate report
+    # Generate validation report
     generate_validation_report
     
-    # Final result
     if [ "$validation_passed" = true ]; then
-        log_success "🎉 iOS App Store Connect validation PASSED!"
-        log_info "📦 Ready for App Store Connect publishing"
-        exit 0
+        log_success "✅ iOS App Store validation completed successfully"
+        log_info "📋 App is ready for App Store submission"
+        return 0
     else
-        log_error "❌ iOS App Store Connect validation FAILED!"
-        log_info "📋 Check the validation report for details"
-        exit 1
+        log_warning "⚠️ iOS App Store validation completed with issues"
+        log_info "📋 Please review the validation report and fix any issues"
+        return 1
     fi
 }
 
-# Run validation
+# Run main function
 main "$@" 

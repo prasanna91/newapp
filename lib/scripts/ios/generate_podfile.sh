@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 📦 iOS Podfile Generator Script for QuikApp
-# This script generates the Podfile for iOS
+# This script generates a dynamic Podfile for iOS
 
 set -e
 
@@ -40,11 +40,20 @@ generate_podfile() {
     log_info "📝 Generating Podfile..."
     
     local podfile_path="$PROJECT_ROOT/ios/Podfile"
+    local deployment_target="${IOS_DEPLOYMENT_TARGET:-14.0}"
     
-    # Create Podfile
+    # Backup existing Podfile if it exists
+    if [ -f "$podfile_path" ]; then
+        log_info "📋 Backing up existing Podfile..."
+        cp "$podfile_path" "$podfile_path.backup"
+    fi
+    
+    log_info "📝 Creating new Podfile with iOS $deployment_target deployment target..."
+    
+    # Generate Podfile content
     cat > "$podfile_path" << EOF
 # Uncomment this line to define a global platform for your project
-platform :ios, '15.0'
+platform :ios, '$deployment_target'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -62,7 +71,7 @@ def flutter_root
   end
 
   File.foreach(generated_xcode_build_settings_path) do |line|
-    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    matches = line.match(/FLUTTER_ROOT\\=(.*)/)
     return matches[1].strip if matches
   end
   raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
@@ -83,25 +92,89 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # Add minimum deployment target
+    # Set deployment target for all pods
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$deployment_target'
+      
+      # Enable arm64 for simulator builds
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
   end
 end
 EOF
     
     log_success "Podfile generated successfully"
+    log_info "📋 Podfile location: $podfile_path"
+    log_info "📱 iOS Deployment Target: $deployment_target"
+    
+    # Display Podfile content for verification
+    log_info "📋 Podfile content:"
+    echo "----------------------------------------"
+    cat "$podfile_path"
+    echo "----------------------------------------"
+}
+
+# Verify Podfile
+verify_podfile() {
+    log_info "🔍 Verifying generated Podfile..."
+    
+    local podfile_path="$PROJECT_ROOT/ios/Podfile"
+    
+    if [ ! -f "$podfile_path" ]; then
+        log_error "Podfile was not created"
+        return 1
+    fi
+    
+    # Check for required elements
+    local has_platform=false
+    local has_target=false
+    local has_post_install=false
+    
+    if grep -q "platform :ios" "$podfile_path"; then
+        has_platform=true
+        log_info "✅ Platform configuration found"
+    else
+        log_warning "Platform configuration not found"
+    fi
+    
+    if grep -q "target 'Runner'" "$podfile_path"; then
+        has_target=true
+        log_info "✅ Runner target found"
+    else
+        log_warning "Runner target not found"
+    fi
+    
+    if grep -q "post_install" "$podfile_path"; then
+        has_post_install=true
+        log_info "✅ Post-install hook found"
+    else
+        log_warning "Post-install hook not found"
+    fi
+    
+    if [ "$has_platform" = true ] && [ "$has_target" = true ] && [ "$has_post_install" = true ]; then
+        log_success "✅ Podfile verification passed"
+        return 0
+    else
+        log_warning "⚠️ Podfile verification incomplete"
+        return 1
+    fi
 }
 
 # Main execution
 main() {
-    log_info "📦 Starting iOS Podfile generation for $APP_NAME"
+    log_info "📦 Starting Podfile generation for $APP_NAME"
     
     # Generate Podfile
     generate_podfile
     
-    log_success "🎉 iOS Podfile generation completed successfully!"
+    # Verify Podfile
+    if verify_podfile; then
+        log_success "✅ Podfile generation completed successfully"
+    else
+        log_warning "⚠️ Podfile generation completed with warnings"
+    fi
+    
+    return 0
 }
 
 # Run main function
