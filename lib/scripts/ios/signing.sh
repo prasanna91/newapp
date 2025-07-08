@@ -39,18 +39,23 @@ log_info "🔐 Starting iOS Signing Configuration"
 validate_signing_vars() {
     log_info "🔍 Validating signing configuration..."
     
+    # Use default values if environment variables are not set
+    local profile_url="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
+    local team_id="${APPLE_TEAM_ID:-9H2AD7NQ49}"
+    local bundle_id="${BUNDLE_ID:-com.twinklub.twinklub}"
+    
     # Check for required variables
-    if [ -z "$PROFILE_URL" ]; then
+    if [ -z "$profile_url" ]; then
         log_error "PROFILE_URL is required for iOS signing"
         return 1
     fi
     
-    if [ -z "$APPLE_TEAM_ID" ]; then
+    if [ -z "$team_id" ]; then
         log_error "APPLE_TEAM_ID is required for iOS signing"
         return 1
     fi
     
-    if [ -z "$BUNDLE_ID" ]; then
+    if [ -z "$bundle_id" ]; then
         log_error "BUNDLE_ID is required for iOS signing"
         return 1
     fi
@@ -63,24 +68,28 @@ validate_signing_vars() {
 setup_p12_certificate() {
     log_info "🔐 Attempting P12 certificate setup..."
     
-    if [ -z "$CERT_P12_URL" ]; then
-        log_warning "CERT_P12_URL not provided, skipping P12 setup"
+    # Use default values if environment variables are not set
+    local p12_url="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
+    local p12_password="${CERT_PASSWORD:-qwerty123}"
+    
+    if [ -z "$p12_url" ]; then
+        log_warning "CERT_P12_URL not provided and no default available, skipping P12 setup"
         return 1
     fi
     
-    if [ -z "$CERT_PASSWORD" ]; then
+    if [ -z "$p12_password" ]; then
         log_warning "CERT_PASSWORD not provided for P12, skipping P12 setup"
         return 1
     fi
     
-    log_info "📥 Downloading P12 certificate from: $CERT_P12_URL"
+    log_info "📥 Downloading P12 certificate from: $p12_url"
     
     # Download P12 certificate
-    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.p12" "$CERT_P12_URL"; then
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.p12" "$p12_url"; then
         log_success "P12 certificate downloaded successfully"
         
         # Verify P12 file integrity
-        if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$CERT_PASSWORD" >/dev/null 2>&1; then
+        if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$p12_password" >/dev/null 2>&1; then
             log_success "P12 certificate verified successfully"
             
             # Import P12 into keychain
@@ -100,7 +109,7 @@ setup_p12_certificate() {
             for keychain_path in "${keychain_paths[@]}"; do
                 if [ -f "$keychain_path" ]; then
                     log_info "Trying keychain: $keychain_path"
-                    if security import "$PROJECT_ROOT/ios/Runner.p12" -k "$keychain_path" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                    if security import "$PROJECT_ROOT/ios/Runner.p12" -k "$keychain_path" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
                         log_success "P12 certificate imported into keychain successfully: $keychain_path"
                         import_success=true
                         break
@@ -129,8 +138,12 @@ setup_p12_certificate() {
 setup_cer_key_certificate() {
     log_info "🔐 Attempting CER+KEY certificate setup..."
     
-    if [ -z "$CERT_CER_URL" ] || [ -z "$CERT_KEY_URL" ]; then
-        log_warning "CERT_CER_URL or CERT_KEY_URL not provided, skipping CER+KEY setup"
+    # Use default values if environment variables are not set
+    local cer_url="${CERT_CER_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer}"
+    local key_url="${CERT_KEY_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key}"
+    
+    if [ -z "$cer_url" ] || [ -z "$key_url" ]; then
+        log_warning "CERT_CER_URL or CERT_KEY_URL not provided and no defaults available, skipping CER+KEY setup"
         return 1
     fi
     
@@ -138,12 +151,12 @@ setup_cer_key_certificate() {
     local p12_password="${CERT_PASSWORD:-quikapp_default_password_2024}"
     
     log_info "📥 Downloading certificate files..."
-    log_info "📥 CER file from: $CERT_CER_URL"
-    log_info "📥 KEY file from: $CERT_KEY_URL"
+    log_info "📥 CER file from: $cer_url"
+    log_info "📥 KEY file from: $key_url"
     
     # Download CER and KEY files
-    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.cer" "$CERT_CER_URL" && \
-       curl -fsSL -o "$PROJECT_ROOT/ios/Runner.key" "$CERT_KEY_URL"; then
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.cer" "$cer_url" && \
+       curl -fsSL -o "$PROJECT_ROOT/ios/Runner.key" "$key_url"; then
         log_success "Certificate files downloaded successfully"
         
         # Verify CER file
@@ -225,9 +238,12 @@ setup_cer_key_certificate() {
 
 # Download and setup provisioning profile
 setup_provisioning_profile() {
-    log_info "📥 Downloading provisioning profile from: $PROFILE_URL"
+    # Use default value if environment variable is not set
+    local profile_url="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
     
-    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.mobileprovision" "$PROFILE_URL"; then
+    log_info "📥 Downloading provisioning profile from: $profile_url"
+    
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.mobileprovision" "$profile_url"; then
         log_success "Provisioning profile downloaded successfully"
         
         # Verify provisioning profile
