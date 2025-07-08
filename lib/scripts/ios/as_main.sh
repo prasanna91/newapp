@@ -195,6 +195,10 @@ build_app() {
     pod install --repo-update
     cd ..
     
+    # Create ExportOptions.plist BEFORE building
+    log_info "📋 Creating ExportOptions.plist for build..."
+    create_export_options
+    
     # Build archive
     log_info "📱 Building iOS archive for App Store..."
     flutter build ios --release --no-codesign
@@ -208,8 +212,11 @@ export_ipa() {
     
     cd "$PROJECT_ROOT"
     
-    # Create ExportOptions.plist for App Store
-    create_export_options
+    # ExportOptions.plist should already exist from build_app
+    if [ ! -f "ios/ExportOptions.plist" ]; then
+        log_error "ExportOptions.plist not found. Creating it now..."
+        create_export_options
+    fi
     
     # Export IPA
     if [ -d "build/ios/archive/Runner.xcarchive" ]; then

@@ -60,9 +60,21 @@ build_app() {
     fi
     cd ..
     
+    # Create ExportOptions.plist BEFORE building
+    log_info "📋 Creating ExportOptions.plist for build..."
+    create_export_options
+    
     # Build IPA with error handling
     log_info "📱 Building iOS IPA..."
-    if ! flutter build ipa --release --export-options-plist=ios/ExportOptions.plist; then
+    
+    # Verify ExportOptions.plist exists
+    if [ ! -f "$PROJECT_ROOT/ios/ExportOptions.plist" ]; then
+        log_error "ExportOptions.plist not found at $PROJECT_ROOT/ios/ExportOptions.plist"
+        exit 1
+    fi
+    
+    log_info "Using ExportOptions.plist: $PROJECT_ROOT/ios/ExportOptions.plist"
+    if ! flutter build ipa --release --export-options-plist="$PROJECT_ROOT/ios/ExportOptions.plist"; then
         log_error "Flutter build failed!"
         exit 1
     fi
@@ -76,8 +88,11 @@ export_ipa() {
     
     cd "$PROJECT_ROOT"
     
-    # Create ExportOptions.plist
-    create_export_options
+    # ExportOptions.plist should already exist from build_app
+    if [ ! -f "ios/ExportOptions.plist" ]; then
+        log_error "ExportOptions.plist not found. Creating it now..."
+        create_export_options
+    fi
     
     # Export IPA
     if [ -d "build/ios/archive/Runner.xcarchive" ]; then
