@@ -73,6 +73,15 @@ build_app() {
         exit 1
     fi
     
+    # Verify certificates are available
+    log_info "🔍 Verifying certificates before build..."
+    if ! security find-identity -v -p codesigning | grep -q "valid identities found"; then
+        log_error "No valid code signing certificates found in keychain"
+        log_info "Available certificates:"
+        security find-identity -v -p codesigning || true
+        exit 1
+    fi
+    
     log_info "Using ExportOptions.plist: $PROJECT_ROOT/ios/ExportOptions.plist"
     if ! flutter build ipa --release --export-options-plist="$PROJECT_ROOT/ios/ExportOptions.plist"; then
         log_error "Flutter build failed!"

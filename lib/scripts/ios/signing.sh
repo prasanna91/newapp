@@ -82,6 +82,37 @@ setup_p12_certificate() {
         # Verify P12 file integrity
         if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$CERT_PASSWORD" >/dev/null 2>&1; then
             log_success "P12 certificate verified successfully"
+            
+            # Import P12 into keychain
+            log_info "🔐 Importing P12 certificate into keychain..."
+            
+            # Try different keychain paths for different environments
+            local keychain_paths=(
+                "$HOME/Library/Keychains/login.keychain-db"
+                "$HOME/Library/Keychains/login.keychain"
+                "/Users/builder/Library/Keychains/login.keychain-db"
+                "/Users/builder/Library/Keychains/login.keychain"
+                "/var/root/Library/Keychains/login.keychain-db"
+                "/var/root/Library/Keychains/login.keychain"
+            )
+            
+            local import_success=false
+            for keychain_path in "${keychain_paths[@]}"; do
+                if [ -f "$keychain_path" ]; then
+                    log_info "Trying keychain: $keychain_path"
+                    if security import "$PROJECT_ROOT/ios/Runner.p12" -k "$keychain_path" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                        log_success "P12 certificate imported into keychain successfully: $keychain_path"
+                        import_success=true
+                        break
+                    fi
+                fi
+            done
+            
+            if [ "$import_success" = false ]; then
+                log_error "Failed to import P12 certificate into any keychain"
+                return 1
+            fi
+            
             return 0
         else
             log_error "P12 certificate verification failed - invalid password or corrupted file"
@@ -142,6 +173,37 @@ setup_cer_key_certificate() {
             -passout pass:"$p12_password"; then
             log_success "Certificate converted to P12 successfully"
             
+            # Import P12 into keychain
+            log_info "🔐 Importing generated P12 certificate into keychain..."
+            
+            # Try different keychain paths for different environments
+            local keychain_paths=(
+                "$HOME/Library/Keychains/login.keychain-db"
+                "$HOME/Library/Keychains/login.keychain"
+                "/Users/builder/Library/Keychains/login.keychain-db"
+                "/Users/builder/Library/Keychains/login.keychain"
+                "/var/root/Library/Keychains/login.keychain-db"
+                "/var/root/Library/Keychains/login.keychain"
+            )
+            
+            local import_success=false
+            for keychain_path in "${keychain_paths[@]}"; do
+                if [ -f "$keychain_path" ]; then
+                    log_info "Trying keychain: $keychain_path"
+                    if security import "$PROJECT_ROOT/ios/Runner.p12" -k "$keychain_path" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                        log_success "Generated P12 certificate imported into keychain successfully: $keychain_path"
+                        import_success=true
+                        break
+                    fi
+                fi
+            done
+            
+            if [ "$import_success" = false ]; then
+                log_error "Failed to import generated P12 certificate into any keychain"
+                rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+                return 1
+            fi
+            
             # Clean up temporary files
             rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
             
@@ -171,7 +233,23 @@ setup_provisioning_profile() {
         # Verify provisioning profile
         if security cms -D -i "$PROJECT_ROOT/ios/Runner.mobileprovision" >/dev/null 2>&1; then
             log_success "Provisioning profile verified successfully"
-            return 0
+            
+            # Create provisioning profiles directory if it doesn't exist
+            local profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+            if [ ! -d "$profiles_dir" ]; then
+                log_info "📁 Creating provisioning profiles directory..."
+                mkdir -p "$profiles_dir"
+            fi
+            
+            # Install provisioning profile
+            log_info "📱 Installing provisioning profile..."
+            if cp "$PROJECT_ROOT/ios/Runner.mobileprovision" "$profiles_dir/"; then
+                log_success "Provisioning profile installed successfully"
+                return 0
+            else
+                log_error "Failed to install provisioning profile"
+                return 1
+            fi
         else
             log_error "Provisioning profile verification failed"
             rm -f "$PROJECT_ROOT/ios/Runner.mobileprovision"
@@ -179,6 +257,20 @@ setup_provisioning_profile() {
         fi
     else
         log_error "Failed to download provisioning profile from: $PROFILE_URL"
+        return 1
+    fi
+}
+
+# Verify certificates in keychain
+verify_certificates() {
+    log_info "🔍 Verifying certificates in keychain..."
+    
+    # List available certificates
+    if security find-identity -v -p codesigning; then
+        log_success "Certificates found in keychain"
+        return 0
+    else
+        log_error "No certificates found in keychain"
         return 1
     fi
 }
@@ -209,15 +301,22 @@ configure_signing() {
     log_warning "P12 setup failed, falling back to CER+KEY method..."
     if setup_cer_key_certificate; then
         log_success "🎉 CER+KEY certificate setup completed successfully"
-        return 0
+    else
+        # If both methods fail
+        log_error "❌ All certificate setup methods failed"
+        log_error "Please provide either:"
+        log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
+        log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
+        exit 1
     fi
     
-    # If both methods fail
-    log_error "❌ All certificate setup methods failed"
-    log_error "Please provide either:"
-    log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
-    log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
-    exit 1
+    # Verify certificates are properly installed
+    if ! verify_certificates; then
+        log_error "Certificate verification failed"
+        exit 1
+    fi
+    
+    return 0
 }
 
 # Main execution
