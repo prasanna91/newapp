@@ -35,6 +35,26 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 log_info "🔐 Starting iOS Signing Configuration"
 
+# Set default environment variables if not already set
+export CERT_P12_URL="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
+export CERT_CER_URL="${CERT_CER_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer}"
+export CERT_KEY_URL="${CERT_KEY_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key}"
+export CERT_PASSWORD="${CERT_PASSWORD:-qwerty123}"
+export PROFILE_URL="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
+export APPLE_TEAM_ID="${APPLE_TEAM_ID:-9H2AD7NQ49}"
+export BUNDLE_ID="${BUNDLE_ID:-com.twinklub.twinklub}"
+export PROFILE_TYPE="${PROFILE_TYPE:-app-store}"
+
+log_info "📋 Environment Variables Set:"
+log_info "   - CERT_P12_URL: $CERT_P12_URL"
+log_info "   - CERT_CER_URL: $CERT_CER_URL"
+log_info "   - CERT_KEY_URL: $CERT_KEY_URL"
+log_info "   - CERT_PASSWORD: $CERT_PASSWORD"
+log_info "   - PROFILE_URL: $PROFILE_URL"
+log_info "   - APPLE_TEAM_ID: $APPLE_TEAM_ID"
+log_info "   - BUNDLE_ID: $BUNDLE_ID"
+log_info "   - PROFILE_TYPE: $PROFILE_TYPE"
+
 # Validate required signing variables
 validate_signing_vars() {
     log_info "🔍 Validating signing configuration..."
@@ -103,10 +123,10 @@ setup_p12_certificate() {
             
             # Try different keychain paths for different environments
             local keychain_paths=(
-                "$HOME/Library/Keychains/login.keychain-db"
-                "$HOME/Library/Keychains/login.keychain"
                 "/Users/builder/Library/Keychains/login.keychain-db"
                 "/Users/builder/Library/Keychains/login.keychain"
+                "$HOME/Library/Keychains/login.keychain-db"
+                "$HOME/Library/Keychains/login.keychain"
                 "/var/root/Library/Keychains/login.keychain-db"
                 "/var/root/Library/Keychains/login.keychain"
             )
@@ -119,13 +139,23 @@ setup_p12_certificate() {
                         log_success "P12 certificate imported into keychain successfully: $keychain_path"
                         import_success=true
                         break
+                    else
+                        log_warning "Failed to import into keychain: $keychain_path"
                     fi
+                else
+                    log_warning "Keychain not found: $keychain_path"
                 fi
             done
             
             if [ "$import_success" = false ]; then
-                log_error "Failed to import P12 certificate into any keychain"
-                return 1
+                log_warning "Failed to import into specific keychains, trying default keychain..."
+                if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                    log_success "P12 certificate imported into default keychain successfully"
+                    import_success=true
+                else
+                    log_error "Failed to import P12 certificate into any keychain"
+                    return 1
+                fi
             fi
             
             return 0
@@ -135,7 +165,7 @@ setup_p12_certificate() {
             return 1
         fi
     else
-        log_error "Failed to download P12 certificate from: $CERT_P12_URL"
+        log_error "Failed to download P12 certificate from: $p12_url"
         return 1
     fi
 }
@@ -197,10 +227,10 @@ setup_cer_key_certificate() {
             
             # Try different keychain paths for different environments
             local keychain_paths=(
-                "$HOME/Library/Keychains/login.keychain-db"
-                "$HOME/Library/Keychains/login.keychain"
                 "/Users/builder/Library/Keychains/login.keychain-db"
                 "/Users/builder/Library/Keychains/login.keychain"
+                "$HOME/Library/Keychains/login.keychain-db"
+                "$HOME/Library/Keychains/login.keychain"
                 "/var/root/Library/Keychains/login.keychain-db"
                 "/var/root/Library/Keychains/login.keychain"
             )
@@ -213,14 +243,24 @@ setup_cer_key_certificate() {
                         log_success "Generated P12 certificate imported into keychain successfully: $keychain_path"
                         import_success=true
                         break
+                    else
+                        log_warning "Failed to import into keychain: $keychain_path"
                     fi
+                else
+                    log_warning "Keychain not found: $keychain_path"
                 fi
             done
             
             if [ "$import_success" = false ]; then
-                log_error "Failed to import generated P12 certificate into any keychain"
-                rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
-                return 1
+                log_warning "Failed to import into specific keychains, trying default keychain..."
+                if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
+                    log_success "Generated P12 certificate imported into default keychain successfully"
+                    import_success=true
+                else
+                    log_error "Failed to import generated P12 certificate into any keychain"
+                    rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+                    return 1
+                fi
             fi
             
             # Clean up temporary files
@@ -278,7 +318,7 @@ setup_provisioning_profile() {
             return 1
         fi
     else
-        log_error "Failed to download provisioning profile from: $PROFILE_URL"
+        log_error "Failed to download provisioning profile from: $profile_url"
         return 1
     fi
 }
@@ -339,10 +379,10 @@ configure_signing() {
             log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
             log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
             log_error "Current environment:"
-            log_error "  - CERT_P12_URL: ${CERT_P12_URL:-not set}"
-            log_error "  - CERT_CER_URL: ${CERT_CER_URL:-not set}"
-            log_error "  - CERT_KEY_URL: ${CERT_KEY_URL:-not set}"
-            log_error "  - CERT_PASSWORD: ${CERT_PASSWORD:-not set}"
+            log_error "  - CERT_P12_URL: $CERT_P12_URL"
+            log_error "  - CERT_CER_URL: $CERT_CER_URL"
+            log_error "  - CERT_KEY_URL: $CERT_KEY_URL"
+            log_error "  - CERT_PASSWORD: $CERT_PASSWORD"
             exit 1
         fi
     fi
