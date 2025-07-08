@@ -1,0 +1,856 @@
+---
+alwaysApply: true
+---
+
+QuikApp Project Setup & Development Directives: Full Rule List (Variables Updated)
+This document outlines the complete set of rules and conditional steps for establishing a standardized, automation-ready development ecosystem for the QuikApp project, supporting both Android and iOS mobile builds using Codemagic CI/CD.
+
+🎯 Objective
+Rule: Establish a standardized, automation-ready development ecosystem for the QuikApp project, supporting both Android and iOS mobile builds using Codemagic CI/CD.
+
+Condition: This ecosystem must include dynamic variable injection, strict script organization, and consistent output packaging.
+Action: All workflows must be executed via Codemagic using the appropriate entrypoint script, with no hardcoded values permitted.
+🧱 Core Development Rules
+These rules define the fundamental structure and behavior expected from all build workflows.
+
+1. Workflow Entrypoint Scripts
+   Each major workflow must be initiated through its dedicated shell script.
+
+Condition: A workflow is triggered in Codemagic.
+Action: codemagic.yaml must call the correct entrypoint script based on the selected workflowId (from the API response, which maps to CM_WORKFLOW in Codemagic):
+Android-only: lib/scripts/android/main.sh
+iOS-only (IPA): lib/scripts/ios/main.sh
+Combined (AAB+IPA): lib/scripts/combined/main.sh 2. Script Design Requirements
+All entrypoint scripts (main.sh files) must adhere to the following:
+
+Action:
+Call all submodules responsibly (e.g., scripts under lib/scripts/utils/, lib/scripts/android/, lib/scripts/ios/).
+Contain full logging for execution tracing.
+Utilize set -e to exit immediately on errors, and implement trap for error tracing and cleanup.
+Use exit 0 for successful CI decisions and exit 1 for failures. 3. Email Notification System
+
+Condition: A build workflow completes (whether successful or failed).
+Action: Trigger an email notification system with the following characteristics:
+Content: Email UI must match QuikApp Portal UI, showing build status, artifact download links, and action buttons (Resume Build, View Logs).
+Styling: Utilize HTML-styled badge colors and links that dynamically adjust based on the workflow's outcome (e.g., green for success, red for failure).
+Variables: Use USER_NAME, EMAIL_ID, ENABLE_EMAIL_NOTIFICATIONS, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS.
+🌐 Variable Injection Policy
+
+1. No Hardcoding Policy
+
+Condition: Any configuration value is required within a script or build process.
+Action: All configuration must be sourced dynamically from an API (like the provided Codemagic API response) or an admin configuration file. Hardcoded values are strictly prohibited. Admin variables are placeholders for future database-sourced values. 2. Dynamic Variable Categories
+The following categories of variables must be dynamically injected into the build process, reflecting the latest API structure:
+
+Application Metadata: APP_ID, workflowId (from API, maps to CM_WORKFLOW), branch (from API, maps to CM_BRANCH), USER_NAME, VERSION_NAME, VERSION_CODE, APP_NAME, ORG_NAME, WEB_URL, EMAIL_ID.
+Package Identifiers: PKG_NAME (Android), BUNDLE_ID (iOS).
+Feature Flags: PUSH_NOTIFY, IS_CHATBOT, IS_DOMAIN_URL (formerly IS_DEEPLINK), IS_SPLASH, IS_PULLDOWN, IS_BOTTOMMENU, IS_LOAD_IND.
+Permissions: IS_CAMERA, IS_LOCATION, IS_MIC, IS_NOTIFICATION, IS_CONTACT, IS_BIOMETRIC, IS_CALENDAR, IS_STORAGE.
+UI/Branding (Dynamic): LOGO_URL, SPLASH_URL (formerly SPLASH), SPLASH_BG_URL (formerly SPLASH_BG), SPLASH_BG_COLOR, SPLASH_TAGLINE, SPLASH_TAGLINE_COLOR, SPLASH_ANIMATION, SPLASH_DURATION, BOTTOMMENU_ITEMS, BOTTOMMENU_BG_COLOR, BOTTOMMENU_ICON_COLOR, BOTTOMMENU_TEXT_COLOR, BOTTOMMENU_FONT, BOTTOMMENU_FONT_SIZE, BOTTOMMENU_FONT_BOLD, BOTTOMMENU_FONT_ITALIC, BOTTOMMENU_ACTIVE_TAB_COLOR, BOTTOMMENU_ICON_POSITION, BOTTOMMENU_VISIBLE_ON.
+Firebase: FIREBASE_CONFIG_ANDROID, FIREBASE_CONFIG_IOS.
+iOS Signing: APPLE_TEAM_ID, APNS_KEY_ID, APNS_AUTH_KEY_URL, PROFILE_TYPE (new), PROFILE_URL, CERT_CER_URL, CERT_KEY_URL, CERT_PASSWORD, IS_TESTFLIGHT (new), APP_STORE_CONNECT_KEY_IDENTIFIER.
+Android Keystore: KEY_STORE_URL (formerly KEY_STORE), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD. 3. Admin / Build Environment Variables
+These variables must be available to the build environment, originating from the Codemagic API response or other defaults:
+
+CM_BUILD_DIR (Codemagic internal), BUILD_MODE, FLUTTER_VERSION, GRADLE_VERSION, JAVA_VERSION.
+ANDROID_COMPILE_SDK, ANDROID_MIN_SDK, ANDROID_TARGET_SDK, ANDROID_BUILD_TOOLS, ANDROID_NDK_VERSION, ANDROID_CMDLINE_TOOLS.
+PROJECT_ROOT, ANDROID_ROOT, ASSETS_DIR, OUTPUT_DIR, TEMP_DIR.
+ANDROID_MANIFEST_PATH, ANDROID_BUILD_GRADLE_PATH, ANDROID_KEY_PROPERTIES_PATH, ANDROID_FIREBASE_CONFIG_PATH, ANDROID_MIPMAP_DIR, ANDROID_DRAWABLE_DIR.
+APP_ICON_PATH, SPLASH_IMAGE_PATH, SPLASH_BG_PATH, PUBSPEC_BACKUP_PATH.
+APK_OUTPUT_PATH, AAB_OUTPUT_PATH.
+GRADLE_WRAPPER_DIR, GRADLE_WRAPPER_JAR_PATH, GRADLE_WRAPPER_PROPERTIES_PATH, GRADLE_WRAPPER_URL, GRADLE_DISTRIBUTION_URL, DOWNLOAD_MAX_RETRIES, DOWNLOAD_RETRY_DELAY.
+Email Notification System Variables (New): ENABLE_EMAIL_NOTIFICATIONS, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS.
+ANDROID_KEYSTORE_BASE64 (if used for direct injection), FIREBASE_ENABLED.
+🏗️ Supported CI Workflows (Codemagic)
+
+1. Workflow: Android-Free
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration disabled (e.g., PUSH_NOTIFY is false); Keystore not used (KEY_STORE_URL is null/empty).
+Output: output/android/\*.apk 2. Workflow: Android-Paid
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration enabled (PUSH_NOTIFY is true and FIREBASE_CONFIG_ANDROID is valid); Keystore not used (KEY_STORE_URL is null/empty).
+Output: output/android/\*.apk 3. Workflow: Android-Publish
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration enabled; Keystore enabled and passes the Keystore Validation Flow using KEY*STORE_URL.
+Output: output/android/*.apk and output/android/\_.aab 4. Workflow: iOS-Only (Code Signed IPA)
+
+Entrypoint: lib/scripts/ios/main.sh
+Conditions: Requires CERT_CER_URL, CERT_KEY_URL, PROFILE_URL, CERT_PASSWORD. Firebase integration enabled (FIREBASE_CONFIG_IOS valid) if PUSH_NOTIFY is true.
+Action: Dynamically generate .p12 from .cer and .key using openssl and CERT_PASSWORD. PROFILE_TYPE used for export options.
+Output: output/ios/\*.ipa. 5. Workflow: Combined Android & iOS
+
+Entrypoint: lib/scripts/combined/main.sh
+Conditions: Meets all necessary conditions for both Android and iOS builds (Firebase, Keystore, iOS Signing inputs).
+Action:
+Executes Android logic first, then iOS logic, leveraging shared and dynamically injected variables.
+Build Order: 1. Fetch All Variables from API; 2. Validate & Decode Files (.cer/.key/.mobileprovision); 3. Build Android → Store Artifacts; 4. Generate .p12 → Build iOS IPA → Store Artifacts.
+Output: Both output/android/_.apk/.aab and output/ios/_.ipa.
+QUICKAPP BUILD RULESET - Detailed Variable Conditions
+This section outlines the requirements for each variable category.
+
+Rule: ✅ Required fields must be validated during pipeline start; throw an error if missing.
+Rule: ⚠️ Optional fields should fall back to safe defaults or be skipped if missing.
+Rule: If IS_BOTTOMMENU=false, ignore all bottom menu configuration fields.
+Rule: Workflow detection must be based on a Codemagic environment variable or passed tag (e.g., workflowId from API, mapped to CM_WORKFLOW).
+
+1. App Metadata & Versioning
+
+APP_ID, USER_NAME, VERSION_NAME, VERSION_CODE, APP_NAME, ORG_NAME, WEB_URL, EMAIL_ID: All are ✅ Required for all workflows (1-5). workflowId and branch are provided by Codemagic directly. 2. App Identifiers
+
+PKG_NAME: ✅ Required for Android workflows (1-3, 5).
+BUNDLE_ID: ✅ Required for iOS workflows (4, 5). 3. Feature Toggles (App Config)
+
+PUSH_NOTIFY, IS_CHATBOT, IS_DOMAIN_URL, IS_SPLASH, IS_PULLDOWN, IS_BOTTOMMENU, IS_LOAD_IND: All are ⚠️ Optional for all workflows (1-5).
+Note: IS_DEEPLINK has been renamed to IS_DOMAIN_URL. 4. Runtime Permissions
+
+IS_CAMERA, IS_LOCATION, IS_MIC, IS_NOTIFICATION, IS_CONTACT, IS_BIOMETRIC, IS_CALENDAR, IS_STORAGE: All are ⚠️ Optional for all workflows (1-5).
+Action: If true, inject necessary permission entries into AndroidManifest.xml (Android) and Info.plist (iOS). 5. Splash Screen Settings
+
+SPLASH_URL: ✅ Required for all workflows (1-5). (Formerly SPLASH)
+SPLASH_BG_URL, SPLASH_BG_COLOR, SPLASH_TAGLINE, SPLASH_TAGLINE_COLOR, SPLASH_ANIMATION, SPLASH_DURATION: All are ⚠️ Optional for all workflows (1-5). (Formerly SPLASH_BG) 6. Bottom Menu Configuration
+
+All BOTTOMMENU\_ variables: ✅ Required if IS_BOTTOMMENU=true. Used in all workflows (1-5).
+Note: BOTTOMMENU_FONT value (⁠DM Sans) should be handled carefully due to the potential presence of an invisible character (U+2060 Word Joiner). Scripts should sanitize or ensure proper encoding. 7. Firebase Configuration
+
+FIREBASE_CONFIG_ANDROID: ✅ Required for Android-Paid, Android-Publish, Combined (Android part).
+FIREBASE_CONFIG_IOS: ✅ Required for iOS-only, Combined (iOS part).
+Rule for Push Notification (Firebase):
+Condition: PUSH_NOTIFY flag.
+Action: If PUSH_NOTIFY is true, Firebase integration must be enabled and configured. If false, Firebase integration is not required and should be skipped. 8. Android Keystore (for signing)
+
+KEY_STORE_URL, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD: All are ✅ Required for Android-Publish and Combined workflows. (Note: KEY_STORE renamed to KEY_STORE_URL).
+Rule (Keystore Setup & Validation Flow): The KEY_STORE_URL variable controls the Keystore setup. If issues arise, the build should not stop but instead skip Keystore setup and continue. Error notifications will be sent.
+a. Keystore Presence Check:
+Condition: KEY_STORE_URL variable is null or empty.
+Action: Log "Keystore variable is empty. Skipping Keystore setup and continuing build." Proceed to next build steps.
+b. Keystore Credential Validation (Pre-Check):
+Condition: KEY_STORE_URL contains data (implies an attempt at setup) AND any of CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD is missing/empty.
+Action: Send email notification "Alert: Android App Codesigning Skipped - Missing Keystore Credentials." Log the issue. Skip Keystore setup and continue.
+c. Keystore Download (if URL & credentials valid):
+Condition: KEY_STORE_URL contains a valid URL AND all three credential variables are present.
+Action: Attempt to download the Keystore file.
+Error Handling (Download Failure): If download fails, send email "Alert: Android App Codesigning Skipped - Keystore Download Failed." Log the issue. Skip Keystore setup and continue.
+d. Keystore Installation (if all conditions met):
+Condition: KEY_STORE_URL contains data (or file downloaded) AND all three credential variables are present/valid, AND no download errors occurred.
+Action: Proceed with Keystore installation/setup for codesigning. Log "Keystore setup successful. Proceeding with Android App Codesigning."
+e. Generic Keystore Setup Error (Catch-all):
+Condition: Any other unexpected error during Keystore setup.
+Action: Send email "Alert: Android App Codesigning Skipped - Keystore Setup Error." Log the issue. Skip Keystore setup and continue. 9. iOS Signing
+
+PROFILE_TYPE (new): ✅ Required. Defines the type of provisioning profile (e.g., app-store, ad-hoc).
+CERT_CER_URL, CERT_KEY_URL, CERT_PASSWORD, PROFILE_URL: All are ✅ Required for iOS-only and Combined workflows. 10. Apple Push & StoreConnect Keys
+
+APPLE_TEAM_ID, APNS_KEY_ID, APNS_AUTH_KEY_URL, APP_STORE_CONNECT_KEY_IDENTIFIER: All are ✅ Required for iOS-only and Combined workflows.
+IS_TESTFLIGHT (new): ⚠️ Optional. If true, implies integration with TestFlight upload. 11. Email Notification System Variables (New)
+
+ENABLE_EMAIL_NOTIFICATIONS: ⚠️ Optional. If true, enables the email notification system.
+EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS: ✅ Required if ENABLE_EMAIL_NOTIFICATIONS is true.
+⚙️ Workflow Routing Logic (Inside Scripts)
+Rule: Each entrypoint script (main.sh) must use conditional logic to:
+Detect the workflow type via workflowId (from API response) or other flags (e.g., PUSH_NOTIFY, presence of signing variables).
+Download assets using curl or wget from specified URLs.
+Inject variables into AndroidManifest.xml, Info.plist, pubspec.yaml, or other configuration files.
+Trigger platform-specific builds (e.g., Gradle for Android, Xcode for iOS).
+Sign apps (Keystore for Android, .p12 for iOS).
+🧪 Validation Checklist
+Rule: All workflows must be tested in Codemagic.
+Rule: External Asset Hosting: All assets (JSON, .cer, .key, .plist, .mobileprovision) must be hosted on GitHub (or similar direct-linkable repository) using raw URLs.
+Condition: Any workflow requires an external asset.
+Action: Use the raw URL for each asset (e.g., https://raw.githubusercontent.com/...). Ensure public accessibility for testing or configure appropriate credentials for private repos.
+Rule: The .p12 file must be generated on the fly from provided .cer and .key using CERT_PASSWORD.
+Rule: Custom permissions and UI settings must be injected using variables.
+Rule: The system must be compatible with both APK-only and AAB builds.
+Rule: The system must support Firebase on both Android and iOS platforms when PUSH_NOTIFY is true.
+Rule: Dynamic variable routing must function correctly via environment variables from the Codemagic API response.
+
+Email notifications: Removed problematic mailx usage, now only uses msmtp or logs status.
+Added customization blocks for both Android and iOS.
+✅ New Features:
+Android Customization (lib/scripts/android/customization.sh):
+Updates package name (PKG_NAME) in build.gradle
+Updates app name (APP_NAME) in AndroidManifest.xml
+Updates app icon using assets/images/logo.png
+iOS Customization (lib/scripts/ios/customization.sh):
+Updates bundle ID (BUNDLE_ID) in Info.plist
+Updates app name (APP_NAME) in Info.plist
+Updates app icon using assets/images/logo.png
+Integration: Both main scripts now run customization after branding but before other steps.
+✅ Build Flow:
+Branding → Download assets
+Customization → Apply app name, package/bundle ID, and icon
+Firebase/Keystore/Signing → Platform-specific setup
+Build → APK/AAB/IPA generation
+Email notification → Success/failure notification (if msmtp available)
+
+🔐 Android Permissions (lib/scripts/android/permissions.sh)
+Configures AndroidManifest.xml based on feature flags:
+IS_CAMERA → Camera, camera features
+IS_LOCATION → Fine, coarse, background location
+IS_MIC → Record audio, microphone feature
+IS_NOTIFICATION → Post notifications, wake lock, vibrate
+IS_CONTACT → Read/write contacts, get accounts
+IS_BIOMETRIC → Use biometric, fingerprint
+IS_CALENDAR → Read/write calendar
+IS_STORAGE → External storage, media files (images, video, audio)
+Always added: Internet permission (required for Flutter apps)
+🍎 iOS Permissions (lib/scripts/ios/permissions.sh)
+Configures Info.plist with usage descriptions:
+IS_CAMERA → NSCameraUsageDescription
+IS_LOCATION → NSLocationWhenInUseUsageDescription, NSLocationAlwaysAndWhenInUseUsageDescription, NSLocationAlwaysUsageDescription
+IS_MIC → NSMicrophoneUsageDescription
+IS_CONTACT → NSContactsUsageDescription
+IS_BIOMETRIC → NSFaceIDUsageDescription
+IS_CALENDAR → NSCalendarsUsageDescription
+IS_STORAGE → NSPhotoLibraryUsageDescription, NSPhotoLibraryAddUsageDescription
+Always added: NSAppTransportSecurity for network access
+🔄 Workflow Integration
+Both main scripts now run in this order:
+Branding → Download assets
+Customization → App name, package/bundle ID, icon
+Permissions → Configure permissions based on feature flags
+Firebase/Keystore/Signing → Platform-specific setup
+Build → APK/AAB/IPA generation
+Email notification → Success/failure notification
+📋 Permission Variables Used
+All permissions are automatically configured based on these Codemagic environment variables:
+IS_CAMERA
+IS_LOCATION
+IS_MIC
+IS_NOTIFICATION
+IS_CONTACT
+IS_BIOMETRIC
+IS_CALENDAR
+IS_STORAGE
+Your apps will now have the correct permissions for both Android and iOS based on your feature configuration! 🚀
+
+You now have a robust, automated system for keeping your Dart app’s configuration (env_config.dart) in sync with Codemagic environment variables for all workflows:
+✅ What’s Implemented
+lib/scripts/utils/gen_env_config.sh:
+Generates lib/config/env_config.dart from all Codemagic environment variables, with proper null/type handling, using a cat <<EOF ... EOF block.
+Main scripts (android/main.sh, ios/main.sh):
+Now call this generator script before any build or asset step, ensuring Dart always sees the latest config.
+All Dart code should use EnvConfig for runtime configuration, and you can be sure it’s always up to date with your CI/CD environment.
+How It Works
+Codemagic injects env vars (from codemagic.yaml).
+gen_env_config.sh reads these and generates a Dart config file.
+Your Dart code imports and uses EnvConfig for all runtime variables.
+What to Do in Dart
+Always use EnvConfig for any variable that comes from Codemagic or your build environment.
+Example:
+Apply to quikapp01.md...
+}
+You are now fully automated and future-proofed for all workflows!
+If you want to add more variables, just update the generator script and reference them in your Dart code via EnvConfig.
+Let me know if you want to enforce or check for EnvConfig usage in your Dart codebase!
+
+🎉 Email Notification System Implementation Complete!
+I've successfully updated your QuikApp build system with a comprehensive email notification system using your Gmail SMTP credentials. Here's what's been implemented:
+✅ Email Configuration
+SMTP Server: smtp.gmail.com:587
+Credentials: Using your provided Gmail account and app password
+Security: TLS encryption enabled
+✅ Email Types Implemented
+
+1. Build Started Email 🚀
+   Sent when build process begins
+   Contains app details, customizations, integrations, and permissions
+   Professional QuikApp branding
+2. Build Success Email 🎉
+   Sent when build completes successfully
+   Includes download links to Codemagic artifacts
+   Complete app configuration summary
+   Next steps for deployment
+3. Build Failed Email ❌
+   Sent when build encounters errors
+   Detailed troubleshooting steps for common issues
+   Error message with context
+   Links to restart build and view logs
+   ✅ Email Content Features
+   App Details Section 📱
+   App Name, Version, Package Name/Bundle ID
+   Organization and Website information
+   Customization Features 🎨
+   Logo, Splash Screen, Pull to Refresh
+   Loading Indicator, Bottom Navigation Bar
+   Status: ✅ Enabled / ❌ Disabled
+   Integration Features 🔗
+   Push Notifications, Chat Bot, Deep Linking
+   Firebase configuration status
+   Permissions 🔐
+   All 8 permission types with status indicators
+   Notifications, Microphone, Camera, GPS, Biometric, Contacts, Calendar, Storage
+   Troubleshooting Guide 🔧
+   Environment Variables checklist
+   Certificate and Keystore issues
+   Firebase configuration problems
+   Build dependencies verification
+   Step-by-step resolution guide
+   QuikApp Branding 🚀
+   Professional footer with links
+   Website, Documentation, Support, Community
+   Copyright and automated system attribution
+   ✅ Integration with Build Scripts
+   Android: lib/scripts/android/main.sh
+   iOS: lib/scripts/ios/main.sh
+   Combined: lib/scripts/combined/main.sh
+   All scripts now automatically:
+   Send "build_started" email at the beginning
+   Send "build_failed" email on any error (with error details)
+   Send "build_success" email upon completion (with artifact URLs)
+   ✅ Smart Features
+   Auto-detection: Automatically determines platform and signing status
+   Artifact URLs: Dynamically includes Codemagic download links
+   Error Context: Includes specific error messages and line numbers
+   Graceful Fallback: Email failures don't break the build process
+   The system is now ready for production use with your development SMTP credentials! 🎯
+   Next Steps:
+   Test the email system in Codemagic
+   Verify all email templates render correctly
+   Confirm artifact download links work
+   Replace with production SMTP credentials when ready
+   Your QuikApp build system now provides professional, comprehensive email notifications that match your portal UI and provide valuable insights for both successful builds and troubleshooting failed ones! 🚀
+
+🔧 Dynamic Build Script Generation
+Workflow-Specific Configurations:
+android-free & android-paid:
+✅ No keystore configuration (debug signing only)
+✅ Simple release build type with debug signing
+✅ Java imports always present
+android-publish & combined:
+✅ Full keystore configuration with Properties loading
+✅ Conditional signing (release if keystore exists, debug fallback)
+✅ Java imports always present
+Key Features:
+📝 Complete file generation using cat EOF command
+🔄 Workflow-aware configuration injection
+🛡️ Backup creation of original file
+📋 Clear logging for debugging
+🎯 Targeted configurations for each workflow type
+What This Solves:
+✅ Unresolved reference errors (imports always present)
+✅ Workflow-specific logic (keystore only when needed)
+✅ Consistent file structure (no manual editing issues)
+✅ Maintainable code (single source of truth)
+Generated Files:
+android-free/android-paid: Simple debug-signing configuration
+android-publish/combined: Full keystore + release signing configuration
+Now your builds will have the correct build.gradle.kts file for each workflow type, eliminating the Gradle compilation errors completely! 🚀
+
+🎨 New Email Design Features
+Visual Design:
+Modern gradient backgrounds with QuikApp's signature colors (#667eea, #764ba2)
+Clean card-based layout with rounded corners and subtle shadows
+Responsive design that works on mobile and desktop
+Professional typography using system fonts for consistency
+Content Structure:
+Dynamic header with status-specific colors and icons
+App details section prominently displaying app name and version
+Info grid showing platform, build ID, user, and website
+Message section for build details and status information
+Professional footer with QuikApp branding and links
+Status-Specific Styling:
+🚀 Build Started: Blue gradient (#667eea)
+🎉 Build Success: Green gradient (#11998e)
+❌ Build Failed: Red gradient (#ff6b6b)
+QuikApp Branding:
+QuikApp logo in the footer
+Links to: quikapp.co, app.quikapp.co, documentation, and support
+Professional footer with copyright and attribution
+Mobile Responsive:
+Adaptive grid layout that stacks on mobile
+Optimized spacing for different screen sizes
+Touch-friendly link sizes
+The email now has a premium, professional appearance that matches modern web design standards
+
+In the iOS build script (lib/scripts/ios/main.sh):
+Added support for CERT_P12_URL as an optional variable
+Added validation to check for either P12 or CER/KEY combination
+Modified the certificate setup process to handle both formats
+Added a new validation function to check required variables
+In the Codemagic configuration (codemagic.yaml):
+Added CERT_P12_URL variable to both iOS-only and combined workflows
+Made CERT_CER_URL and CERT_KEY_URL optional if P12 is provided
+The script now follows this logic:
+If CERT_P12_URL is provided:
+Downloads and imports the P12 file directly
+Uses the provided CERT_PASSWORD for import
+If CERT_P12_URL is not provided:
+Downloads CERT_CER_URL and CERT_KEY_URL
+Converts them to P12 format
+Uses the provided CERT_PASSWORD for conversion and import
+Required variables:
+Always required:
+CERT_PASSWORD
+PROFILE_URL
+APPLE_TEAM_ID
+BUNDLE_ID
+Certificate variables (one of these combinations):
+Option 1: CERT_P12_URL
+Option 2: Both CERT_CER_URL and CERT_KEY_URL
+This gives users the flexibility to provide either:
+A pre-made P12 file with password
+Separate certificate and key files that will be converted to P12
+
+updated the build system to support both App Store and Ad-Hoc distribution methods. Here are the key changes:
+Added support for Ad-Hoc distribution:
+Added PROFILE_TYPE validation ("app-store" or "ad-hoc")
+Added Ad-Hoc specific export options
+Added manifest file generation for OTA installation
+Added device-specific build support
+New variables for Ad-Hoc distribution:
+Required:
+PROFILE_TYPE: Must be either "app-store" or "ad-hoc"
+Optional (for Ad-Hoc):
+ENABLE_DEVICE_SPECIFIC_BUILDS: Enable device-specific builds
+INSTALL_URL: URL where the IPA will be hosted for OTA installation
+DISPLAY_IMAGE_URL: Icon URL for OTA installation page
+FULL_SIZE_IMAGE_URL: Full-size image URL for OTA installation page
+THINNING: Control app thinning (defaults to "none")
+Features for Ad-Hoc distribution:
+OTA installation manifest generation
+Device-specific build support
+Optimized export options for Ad-Hoc
+Proper bitcode and symbol handling
+To use Ad-Hoc distribution:
+Set required variables:
+Apply to quikapp01.md...
+"
+Optional: Enable OTA installation:
+Apply to quikapp01.md...
+"
+Optional: Enable device-specific builds:
+Apply to quikapp01.md...
+"
+The script will:
+Generate a properly signed IPA
+Create a manifest file for OTA installation (if INSTALL_URL is provided)
+Output both files to the artifacts directory
+QuikApp Project Setup & Development Directives: Full Rule List (Variables Updated)
+This document outlines the complete set of rules and conditional steps for establishing a standardized, automation-ready development ecosystem for the QuikApp project, supporting both Android and iOS mobile builds using Codemagic CI/CD.
+
+🎯 Objective
+Rule: Establish a standardized, automation-ready development ecosystem for the QuikApp project, supporting both Android and iOS mobile builds using Codemagic CI/CD.
+
+Condition: This ecosystem must include dynamic variable injection, strict script organization, and consistent output packaging.
+Action: All workflows must be executed via Codemagic using the appropriate entrypoint script, with no hardcoded values permitted.
+🧱 Core Development Rules
+These rules define the fundamental structure and behavior expected from all build workflows.
+
+1. Workflow Entrypoint Scripts
+   Each major workflow must be initiated through its dedicated shell script.
+
+Condition: A workflow is triggered in Codemagic.
+Action: codemagic.yaml must call the correct entrypoint script based on the selected workflowId (from the API response, which maps to CM_WORKFLOW in Codemagic):
+Android-only: lib/scripts/android/main.sh
+iOS-only (IPA): lib/scripts/ios/main.sh
+Combined (AAB+IPA): lib/scripts/combined/main.sh 2. Script Design Requirements
+All entrypoint scripts (main.sh files) must adhere to the following:
+
+Action:
+Call all submodules responsibly (e.g., scripts under lib/scripts/utils/, lib/scripts/android/, lib/scripts/ios/).
+Contain full logging for execution tracing.
+Utilize set -e to exit immediately on errors, and implement trap for error tracing and cleanup.
+Use exit 0 for successful CI decisions and exit 1 for failures. 3. Email Notification System
+
+Condition: A build workflow completes (whether successful or failed).
+Action: Trigger an email notification system with the following characteristics:
+Content: Email UI must match QuikApp Portal UI, showing build status, artifact download links, and action buttons (Resume Build, View Logs).
+Styling: Utilize HTML-styled badge colors and links that dynamically adjust based on the workflow's outcome (e.g., green for success, red for failure).
+Variables: Use USER_NAME, EMAIL_ID, ENABLE_EMAIL_NOTIFICATIONS, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS.
+🌐 Variable Injection Policy
+
+1. No Hardcoding Policy
+
+Condition: Any configuration value is required within a script or build process.
+Action: All configuration must be sourced dynamically from an API (like the provided Codemagic API response) or an admin configuration file. Hardcoded values are strictly prohibited. Admin variables are placeholders for future database-sourced values. 2. Dynamic Variable Categories
+The following categories of variables must be dynamically injected into the build process, reflecting the latest API structure:
+
+Application Metadata: APP_ID, workflowId (from API, maps to CM_WORKFLOW), branch (from API, maps to CM_BRANCH), USER_NAME, VERSION_NAME, VERSION_CODE, APP_NAME, ORG_NAME, WEB_URL, EMAIL_ID.
+Package Identifiers: PKG_NAME (Android), BUNDLE_ID (iOS).
+Feature Flags: PUSH_NOTIFY, IS_CHATBOT, IS_DOMAIN_URL (formerly IS_DEEPLINK), IS_SPLASH, IS_PULLDOWN, IS_BOTTOMMENU, IS_LOAD_IND.
+Permissions: IS_CAMERA, IS_LOCATION, IS_MIC, IS_NOTIFICATION, IS_CONTACT, IS_BIOMETRIC, IS_CALENDAR, IS_STORAGE.
+UI/Branding (Dynamic): LOGO_URL, SPLASH_URL (formerly SPLASH), SPLASH_BG_URL (formerly SPLASH_BG), SPLASH_BG_COLOR, SPLASH_TAGLINE, SPLASH_TAGLINE_COLOR, SPLASH_ANIMATION, SPLASH_DURATION, BOTTOMMENU_ITEMS, BOTTOMMENU_BG_COLOR, BOTTOMMENU_ICON_COLOR, BOTTOMMENU_TEXT_COLOR, BOTTOMMENU_FONT, BOTTOMMENU_FONT_SIZE, BOTTOMMENU_FONT_BOLD, BOTTOMMENU_FONT_ITALIC, BOTTOMMENU_ACTIVE_TAB_COLOR, BOTTOMMENU_ICON_POSITION, BOTTOMMENU_VISIBLE_ON.
+Firebase: FIREBASE_CONFIG_ANDROID, FIREBASE_CONFIG_IOS.
+iOS Signing: APPLE_TEAM_ID, APNS_KEY_ID, APNS_AUTH_KEY_URL, PROFILE_TYPE (new), PROFILE_URL, CERT_CER_URL, CERT_KEY_URL, CERT_PASSWORD, IS_TESTFLIGHT (new), APP_STORE_CONNECT_KEY_IDENTIFIER.
+Android Keystore: KEY_STORE_URL (formerly KEY_STORE), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD. 3. Admin / Build Environment Variables
+These variables must be available to the build environment, originating from the Codemagic API response or other defaults:
+
+CM_BUILD_DIR (Codemagic internal), BUILD_MODE, FLUTTER_VERSION, GRADLE_VERSION, JAVA_VERSION.
+ANDROID_COMPILE_SDK, ANDROID_MIN_SDK, ANDROID_TARGET_SDK, ANDROID_BUILD_TOOLS, ANDROID_NDK_VERSION, ANDROID_CMDLINE_TOOLS.
+PROJECT_ROOT, ANDROID_ROOT, ASSETS_DIR, OUTPUT_DIR, TEMP_DIR.
+ANDROID_MANIFEST_PATH, ANDROID_BUILD_GRADLE_PATH, ANDROID_KEY_PROPERTIES_PATH, ANDROID_FIREBASE_CONFIG_PATH, ANDROID_MIPMAP_DIR, ANDROID_DRAWABLE_DIR.
+APP_ICON_PATH, SPLASH_IMAGE_PATH, SPLASH_BG_PATH, PUBSPEC_BACKUP_PATH.
+APK_OUTPUT_PATH, AAB_OUTPUT_PATH.
+GRADLE_WRAPPER_DIR, GRADLE_WRAPPER_JAR_PATH, GRADLE_WRAPPER_PROPERTIES_PATH, GRADLE_WRAPPER_URL, GRADLE_DISTRIBUTION_URL, DOWNLOAD_MAX_RETRIES, DOWNLOAD_RETRY_DELAY.
+Email Notification System Variables (New): ENABLE_EMAIL_NOTIFICATIONS, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS.
+ANDROID_KEYSTORE_BASE64 (if used for direct injection), FIREBASE_ENABLED.
+🏗️ Supported CI Workflows (Codemagic)
+
+1. Workflow: Android-Free
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration disabled (e.g., PUSH_NOTIFY is false); Keystore not used (KEY_STORE_URL is null/empty).
+Output: output/android/\*.apk 2. Workflow: Android-Paid
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration enabled (PUSH_NOTIFY is true and FIREBASE_CONFIG_ANDROID is valid); Keystore not used (KEY_STORE_URL is null/empty).
+Output: output/android/\*.apk 3. Workflow: Android-Publish
+
+Entrypoint: lib/scripts/android/main.sh
+Conditions: Firebase integration enabled; Keystore enabled and passes the Keystore Validation Flow using KEY*STORE_URL.
+Output: output/android/*.apk and output/android/\_.aab 4. Workflow: iOS-Only (Code Signed IPA)
+
+Entrypoint: lib/scripts/ios/main.sh
+Conditions: Requires CERT_CER_URL, CERT_KEY_URL, PROFILE_URL, CERT_PASSWORD. Firebase integration enabled (FIREBASE_CONFIG_IOS valid) if PUSH_NOTIFY is true.
+Action: Dynamically generate .p12 from .cer and .key using openssl and CERT_PASSWORD. PROFILE_TYPE used for export options.
+Output: output/ios/\*.ipa. 5. Workflow: Combined Android & iOS
+
+Entrypoint: lib/scripts/combined/main.sh
+Conditions: Meets all necessary conditions for both Android and iOS builds (Firebase, Keystore, iOS Signing inputs).
+Action:
+Executes Android logic first, then iOS logic, leveraging shared and dynamically injected variables.
+Build Order: 1. Fetch All Variables from API; 2. Validate & Decode Files (.cer/.key/.mobileprovision); 3. Build Android → Store Artifacts; 4. Generate .p12 → Build iOS IPA → Store Artifacts.
+Output: Both output/android/_.apk/.aab and output/ios/_.ipa.
+QUICKAPP BUILD RULESET - Detailed Variable Conditions
+This section outlines the requirements for each variable category.
+
+Rule: ✅ Required fields must be validated during pipeline start; throw an error if missing.
+Rule: ⚠️ Optional fields should fall back to safe defaults or be skipped if missing.
+Rule: If IS_BOTTOMMENU=false, ignore all bottom menu configuration fields.
+Rule: Workflow detection must be based on a Codemagic environment variable or passed tag (e.g., workflowId from API, mapped to CM_WORKFLOW).
+
+1. App Metadata & Versioning
+
+APP_ID, USER_NAME, VERSION_NAME, VERSION_CODE, APP_NAME, ORG_NAME, WEB_URL, EMAIL_ID: All are ✅ Required for all workflows (1-5). workflowId and branch are provided by Codemagic directly. 2. App Identifiers
+
+PKG_NAME: ✅ Required for Android workflows (1-3, 5).
+BUNDLE_ID: ✅ Required for iOS workflows (4, 5). 3. Feature Toggles (App Config)
+
+PUSH_NOTIFY, IS_CHATBOT, IS_DOMAIN_URL, IS_SPLASH, IS_PULLDOWN, IS_BOTTOMMENU, IS_LOAD_IND: All are ⚠️ Optional for all workflows (1-5).
+Note: IS_DEEPLINK has been renamed to IS_DOMAIN_URL. 4. Runtime Permissions
+
+IS_CAMERA, IS_LOCATION, IS_MIC, IS_NOTIFICATION, IS_CONTACT, IS_BIOMETRIC, IS_CALENDAR, IS_STORAGE: All are ⚠️ Optional for all workflows (1-5).
+Action: If true, inject necessary permission entries into AndroidManifest.xml (Android) and Info.plist (iOS). 5. Splash Screen Settings
+
+SPLASH_URL: ✅ Required for all workflows (1-5). (Formerly SPLASH)
+SPLASH_BG_URL, SPLASH_BG_COLOR, SPLASH_TAGLINE, SPLASH_TAGLINE_COLOR, SPLASH_ANIMATION, SPLASH_DURATION: All are ⚠️ Optional for all workflows (1-5). (Formerly SPLASH_BG) 6. Bottom Menu Configuration
+
+All BOTTOMMENU\_ variables: ✅ Required if IS_BOTTOMMENU=true. Used in all workflows (1-5).
+Note: BOTTOMMENU_FONT value (⁠DM Sans) should be handled carefully due to the potential presence of an invisible character (U+2060 Word Joiner). Scripts should sanitize or ensure proper encoding. 7. Firebase Configuration
+
+FIREBASE_CONFIG_ANDROID: ✅ Required for Android-Paid, Android-Publish, Combined (Android part).
+FIREBASE_CONFIG_IOS: ✅ Required for iOS-only, Combined (iOS part).
+Rule for Push Notification (Firebase):
+Condition: PUSH_NOTIFY flag.
+Action: If PUSH_NOTIFY is true, Firebase integration must be enabled and configured. If false, Firebase integration is not required and should be skipped. 8. Android Keystore (for signing)
+
+KEY_STORE_URL, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD: All are ✅ Required for Android-Publish and Combined workflows. (Note: KEY_STORE renamed to KEY_STORE_URL).
+Rule (Keystore Setup & Validation Flow): The KEY_STORE_URL variable controls the Keystore setup. If issues arise, the build should not stop but instead skip Keystore setup and continue. Error notifications will be sent.
+a. Keystore Presence Check:
+Condition: KEY_STORE_URL variable is null or empty.
+Action: Log "Keystore variable is empty. Skipping Keystore setup and continuing build." Proceed to next build steps.
+b. Keystore Credential Validation (Pre-Check):
+Condition: KEY_STORE_URL contains data (implies an attempt at setup) AND any of CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD is missing/empty.
+Action: Send email notification "Alert: Android App Codesigning Skipped - Missing Keystore Credentials." Log the issue. Skip Keystore setup and continue.
+c. Keystore Download (if URL & credentials valid):
+Condition: KEY_STORE_URL contains a valid URL AND all three credential variables are present.
+Action: Attempt to download the Keystore file.
+Error Handling (Download Failure): If download fails, send email "Alert: Android App Codesigning Skipped - Keystore Download Failed." Log the issue. Skip Keystore setup and continue.
+d. Keystore Installation (if all conditions met):
+Condition: KEY_STORE_URL contains data (or file downloaded) AND all three credential variables are present/valid, AND no download errors occurred.
+Action: Proceed with Keystore installation/setup for codesigning. Log "Keystore setup successful. Proceeding with Android App Codesigning."
+e. Generic Keystore Setup Error (Catch-all):
+Condition: Any other unexpected error during Keystore setup.
+Action: Send email "Alert: Android App Codesigning Skipped - Keystore Setup Error." Log the issue. Skip Keystore setup and continue. 9. iOS Signing
+
+PROFILE_TYPE (new): ✅ Required. Defines the type of provisioning profile (e.g., app-store, ad-hoc).
+CERT_CER_URL, CERT_KEY_URL, CERT_PASSWORD, PROFILE_URL: All are ✅ Required for iOS-only and Combined workflows. 10. Apple Push & StoreConnect Keys
+
+APPLE_TEAM_ID, APNS_KEY_ID, APNS_AUTH_KEY_URL, APP_STORE_CONNECT_KEY_IDENTIFIER: All are ✅ Required for iOS-only and Combined workflows.
+IS_TESTFLIGHT (new): ⚠️ Optional. If true, implies integration with TestFlight upload. 11. Email Notification System Variables (New)
+
+ENABLE_EMAIL_NOTIFICATIONS: ⚠️ Optional. If true, enables the email notification system.
+EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS: ✅ Required if ENABLE_EMAIL_NOTIFICATIONS is true.
+⚙️ Workflow Routing Logic (Inside Scripts)
+Rule: Each entrypoint script (main.sh) must use conditional logic to:
+Detect the workflow type via workflowId (from API response) or other flags (e.g., PUSH_NOTIFY, presence of signing variables).
+Download assets using curl or wget from specified URLs.
+Inject variables into AndroidManifest.xml, Info.plist, pubspec.yaml, or other configuration files.
+Trigger platform-specific builds (e.g., Gradle for Android, Xcode for iOS).
+Sign apps (Keystore for Android, .p12 for iOS).
+🧪 Validation Checklist
+Rule: All workflows must be tested in Codemagic.
+Rule: External Asset Hosting: All assets (JSON, .cer, .key, .plist, .mobileprovision) must be hosted on GitHub (or similar direct-linkable repository) using raw URLs.
+Condition: Any workflow requires an external asset.
+Action: Use the raw URL for each asset (e.g., https://raw.githubusercontent.com/...). Ensure public accessibility for testing or configure appropriate credentials for private repos.
+Rule: The .p12 file must be generated on the fly from provided .cer and .key using CERT_PASSWORD.
+Rule: Custom permissions and UI settings must be injected using variables.
+Rule: The system must be compatible with both APK-only and AAB builds.
+Rule: The system must support Firebase on both Android and iOS platforms when PUSH_NOTIFY is true.
+Rule: Dynamic variable routing must function correctly via environment variables from the Codemagic API response.
+
+Email notifications: Removed problematic mailx usage, now only uses msmtp or logs status.
+Added customization blocks for both Android and iOS.
+✅ New Features:
+Android Customization (lib/scripts/android/customization.sh):
+Updates package name (PKG_NAME) in build.gradle
+Updates app name (APP_NAME) in AndroidManifest.xml
+Updates app icon using assets/images/logo.png
+iOS Customization (lib/scripts/ios/customization.sh):
+Updates bundle ID (BUNDLE_ID) in Info.plist
+Updates app name (APP_NAME) in Info.plist
+Updates app icon using assets/images/logo.png
+Integration: Both main scripts now run customization after branding but before other steps.
+✅ Build Flow:
+Branding → Download assets
+Customization → Apply app name, package/bundle ID, and icon
+Firebase/Keystore/Signing → Platform-specific setup
+Build → APK/AAB/IPA generation
+Email notification → Success/failure notification (if msmtp available)
+
+🔐 Android Permissions (lib/scripts/android/permissions.sh)
+Configures AndroidManifest.xml based on feature flags:
+IS_CAMERA → Camera, camera features
+IS_LOCATION → Fine, coarse, background location
+IS_MIC → Record audio, microphone feature
+IS_NOTIFICATION → Post notifications, wake lock, vibrate
+IS_CONTACT → Read/write contacts, get accounts
+IS_BIOMETRIC → Use biometric, fingerprint
+IS_CALENDAR → Read/write calendar
+IS_STORAGE → External storage, media files (images, video, audio)
+Always added: Internet permission (required for Flutter apps)
+🍎 iOS Permissions (lib/scripts/ios/permissions.sh)
+Configures Info.plist with usage descriptions:
+IS_CAMERA → NSCameraUsageDescription
+IS_LOCATION → NSLocationWhenInUseUsageDescription, NSLocationAlwaysAndWhenInUseUsageDescription, NSLocationAlwaysUsageDescription
+IS_MIC → NSMicrophoneUsageDescription
+IS_CONTACT → NSContactsUsageDescription
+IS_BIOMETRIC → NSFaceIDUsageDescription
+IS_CALENDAR → NSCalendarsUsageDescription
+IS_STORAGE → NSPhotoLibraryUsageDescription, NSPhotoLibraryAddUsageDescription
+Always added: NSAppTransportSecurity for network access
+🔄 Workflow Integration
+Both main scripts now run in this order:
+Branding → Download assets
+Customization → App name, package/bundle ID, icon
+Permissions → Configure permissions based on feature flags
+Firebase/Keystore/Signing → Platform-specific setup
+Build → APK/AAB/IPA generation
+Email notification → Success/failure notification
+📋 Permission Variables Used
+All permissions are automatically configured based on these Codemagic environment variables:
+IS_CAMERA
+IS_LOCATION
+IS_MIC
+IS_NOTIFICATION
+IS_CONTACT
+IS_BIOMETRIC
+IS_CALENDAR
+IS_STORAGE
+Your apps will now have the correct permissions for both Android and iOS based on your feature configuration! 🚀
+
+You now have a robust, automated system for keeping your Dart app’s configuration (env_config.dart) in sync with Codemagic environment variables for all workflows:
+✅ What’s Implemented
+lib/scripts/utils/gen_env_config.sh:
+Generates lib/config/env_config.dart from all Codemagic environment variables, with proper null/type handling, using a cat <<EOF ... EOF block.
+Main scripts (android/main.sh, ios/main.sh):
+Now call this generator script before any build or asset step, ensuring Dart always sees the latest config.
+All Dart code should use EnvConfig for runtime configuration, and you can be sure it’s always up to date with your CI/CD environment.
+How It Works
+Codemagic injects env vars (from codemagic.yaml).
+gen_env_config.sh reads these and generates a Dart config file.
+Your Dart code imports and uses EnvConfig for all runtime variables.
+What to Do in Dart
+Always use EnvConfig for any variable that comes from Codemagic or your build environment.
+Example:
+Apply to quikapp01.md...
+}
+You are now fully automated and future-proofed for all workflows!
+If you want to add more variables, just update the generator script and reference them in your Dart code via EnvConfig.
+Let me know if you want to enforce or check for EnvConfig usage in your Dart codebase!
+
+🎉 Email Notification System Implementation Complete!
+I've successfully updated your QuikApp build system with a comprehensive email notification system using your Gmail SMTP credentials. Here's what's been implemented:
+✅ Email Configuration
+SMTP Server: smtp.gmail.com:587
+Credentials: Using your provided Gmail account and app password
+Security: TLS encryption enabled
+✅ Email Types Implemented
+
+1. Build Started Email 🚀
+   Sent when build process begins
+   Contains app details, customizations, integrations, and permissions
+   Professional QuikApp branding
+2. Build Success Email 🎉
+   Sent when build completes successfully
+   Includes download links to Codemagic artifacts
+   Complete app configuration summary
+   Next steps for deployment
+3. Build Failed Email ❌
+   Sent when build encounters errors
+   Detailed troubleshooting steps for common issues
+   Error message with context
+   Links to restart build and view logs
+   ✅ Email Content Features
+   App Details Section 📱
+   App Name, Version, Package Name/Bundle ID
+   Organization and Website information
+   Customization Features 🎨
+   Logo, Splash Screen, Pull to Refresh
+   Loading Indicator, Bottom Navigation Bar
+   Status: ✅ Enabled / ❌ Disabled
+   Integration Features 🔗
+   Push Notifications, Chat Bot, Deep Linking
+   Firebase configuration status
+   Permissions 🔐
+   All 8 permission types with status indicators
+   Notifications, Microphone, Camera, GPS, Biometric, Contacts, Calendar, Storage
+   Troubleshooting Guide 🔧
+   Environment Variables checklist
+   Certificate and Keystore issues
+   Firebase configuration problems
+   Build dependencies verification
+   Step-by-step resolution guide
+   QuikApp Branding 🚀
+   Professional footer with links
+   Website, Documentation, Support, Community
+   Copyright and automated system attribution
+   ✅ Integration with Build Scripts
+   Android: lib/scripts/android/main.sh
+   iOS: lib/scripts/ios/main.sh
+   Combined: lib/scripts/combined/main.sh
+   All scripts now automatically:
+   Send "build_started" email at the beginning
+   Send "build_failed" email on any error (with error details)
+   Send "build_success" email upon completion (with artifact URLs)
+   ✅ Smart Features
+   Auto-detection: Automatically determines platform and signing status
+   Artifact URLs: Dynamically includes Codemagic download links
+   Error Context: Includes specific error messages and line numbers
+   Graceful Fallback: Email failures don't break the build process
+   The system is now ready for production use with your development SMTP credentials! 🎯
+   Next Steps:
+   Test the email system in Codemagic
+   Verify all email templates render correctly
+   Confirm artifact download links work
+   Replace with production SMTP credentials when ready
+   Your QuikApp build system now provides professional, comprehensive email notifications that match your portal UI and provide valuable insights for both successful builds and troubleshooting failed ones! 🚀
+
+🔧 Dynamic Build Script Generation
+Workflow-Specific Configurations:
+android-free & android-paid:
+✅ No keystore configuration (debug signing only)
+✅ Simple release build type with debug signing
+✅ Java imports always present
+android-publish & combined:
+✅ Full keystore configuration with Properties loading
+✅ Conditional signing (release if keystore exists, debug fallback)
+✅ Java imports always present
+Key Features:
+📝 Complete file generation using cat EOF command
+🔄 Workflow-aware configuration injection
+🛡️ Backup creation of original file
+📋 Clear logging for debugging
+🎯 Targeted configurations for each workflow type
+What This Solves:
+✅ Unresolved reference errors (imports always present)
+✅ Workflow-specific logic (keystore only when needed)
+✅ Consistent file structure (no manual editing issues)
+✅ Maintainable code (single source of truth)
+Generated Files:
+android-free/android-paid: Simple debug-signing configuration
+android-publish/combined: Full keystore + release signing configuration
+Now your builds will have the correct build.gradle.kts file for each workflow type, eliminating the Gradle compilation errors completely! 🚀
+
+🎨 New Email Design Features
+Visual Design:
+Modern gradient backgrounds with QuikApp's signature colors (#667eea, #764ba2)
+Clean card-based layout with rounded corners and subtle shadows
+Responsive design that works on mobile and desktop
+Professional typography using system fonts for consistency
+Content Structure:
+Dynamic header with status-specific colors and icons
+App details section prominently displaying app name and version
+Info grid showing platform, build ID, user, and website
+Message section for build details and status information
+Professional footer with QuikApp branding and links
+Status-Specific Styling:
+🚀 Build Started: Blue gradient (#667eea)
+🎉 Build Success: Green gradient (#11998e)
+❌ Build Failed: Red gradient (#ff6b6b)
+QuikApp Branding:
+QuikApp logo in the footer
+Links to: quikapp.co, app.quikapp.co, documentation, and support
+Professional footer with copyright and attribution
+Mobile Responsive:
+Adaptive grid layout that stacks on mobile
+Optimized spacing for different screen sizes
+Touch-friendly link sizes
+The email now has a premium, professional appearance that matches modern web design standards
+
+In the iOS build script (lib/scripts/ios/main.sh):
+Added support for CERT_P12_URL as an optional variable
+Added validation to check for either P12 or CER/KEY combination
+Modified the certificate setup process to handle both formats
+Added a new validation function to check required variables
+In the Codemagic configuration (codemagic.yaml):
+Added CERT_P12_URL variable to both iOS-only and combined workflows
+Made CERT_CER_URL and CERT_KEY_URL optional if P12 is provided
+The script now follows this logic:
+If CERT_P12_URL is provided:
+Downloads and imports the P12 file directly
+Uses the provided CERT_PASSWORD for import
+If CERT_P12_URL is not provided:
+Downloads CERT_CER_URL and CERT_KEY_URL
+Converts them to P12 format
+Uses the provided CERT_PASSWORD for conversion and import
+Required variables:
+Always required:
+CERT_PASSWORD
+PROFILE_URL
+APPLE_TEAM_ID
+BUNDLE_ID
+Certificate variables (one of these combinations):
+Option 1: CERT_P12_URL
+Option 2: Both CERT_CER_URL and CERT_KEY_URL
+This gives users the flexibility to provide either:
+A pre-made P12 file with password
+Separate certificate and key files that will be converted to P12
+
+updated the build system to support both App Store and Ad-Hoc distribution methods. Here are the key changes:
+Added support for Ad-Hoc distribution:
+Added PROFILE_TYPE validation ("app-store" or "ad-hoc")
+Added Ad-Hoc specific export options
+Added manifest file generation for OTA installation
+Added device-specific build support
+New variables for Ad-Hoc distribution:
+Required:
+PROFILE_TYPE: Must be either "app-store" or "ad-hoc"
+Optional (for Ad-Hoc):
+ENABLE_DEVICE_SPECIFIC_BUILDS: Enable device-specific builds
+INSTALL_URL: URL where the IPA will be hosted for OTA installation
+DISPLAY_IMAGE_URL: Icon URL for OTA installation page
+FULL_SIZE_IMAGE_URL: Full-size image URL for OTA installation page
+THINNING: Control app thinning (defaults to "none")
+Features for Ad-Hoc distribution:
+OTA installation manifest generation
+Device-specific build support
+Optimized export options for Ad-Hoc
+Proper bitcode and symbol handling
+To use Ad-Hoc distribution:
+Set required variables:
+Apply to quikapp01.md...
+"
+Optional: Enable OTA installation:
+Apply to quikapp01.md...
+"
+Optional: Enable device-specific builds:
+Apply to quikapp01.md...
+"
+The script will:
+Generate a properly signed IPA
+Create a manifest file for OTA installation (if INSTALL_URL is provided)
+Output both files to the artifacts directory
