@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 🔐 iOS Signing Script for QuikApp
-# This script handles iOS code signing setup
+# This script handles iOS code signing setup with fallback logic
 
 set -e
 
@@ -35,62 +35,208 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 log_info "🔐 Starting iOS Signing Configuration"
 
-# Configure signing
-configure_signing() {
-    if [ -n "$CERT_PASSWORD" ] && [ -n "$PROFILE_URL" ]; then
-        log_info "🔐 Configuring iOS signing..."
+# Validate required signing variables
+validate_signing_vars() {
+    log_info "🔍 Validating signing configuration..."
+    
+    # Check for required variables
+    if [ -z "$PROFILE_URL" ]; then
+        log_error "PROFILE_URL is required for iOS signing"
+        return 1
+    fi
+    
+    if [ -z "$APPLE_TEAM_ID" ]; then
+        log_error "APPLE_TEAM_ID is required for iOS signing"
+        return 1
+    fi
+    
+    if [ -z "$BUNDLE_ID" ]; then
+        log_error "BUNDLE_ID is required for iOS signing"
+        return 1
+    fi
+    
+    log_success "Required signing variables validated"
+    return 0
+}
+
+# Method 1: Use P12 certificate directly
+setup_p12_certificate() {
+    log_info "🔐 Attempting P12 certificate setup..."
+    
+    if [ -z "$CERT_P12_URL" ]; then
+        log_warning "CERT_P12_URL not provided, skipping P12 setup"
+        return 1
+    fi
+    
+    if [ -z "$CERT_PASSWORD" ]; then
+        log_warning "CERT_PASSWORD not provided for P12, skipping P12 setup"
+        return 1
+    fi
+    
+    log_info "📥 Downloading P12 certificate from: $CERT_P12_URL"
+    
+    # Download P12 certificate
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.p12" "$CERT_P12_URL"; then
+        log_success "P12 certificate downloaded successfully"
         
-        # Download provisioning profile
-        if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.mobileprovision" "$PROFILE_URL"; then
-            log_success "Provisioning profile downloaded"
+        # Verify P12 file integrity
+        if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$CERT_PASSWORD" >/dev/null 2>&1; then
+            log_success "P12 certificate verified successfully"
+            return 0
         else
-            log_error "Failed to download provisioning profile"
-            exit 1
-        fi
-        
-        # Handle certificate
-        if [ -n "$CERT_P12_URL" ]; then
-            # Download P12 certificate
-            if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.p12" "$CERT_P12_URL"; then
-                log_success "P12 certificate downloaded"
-            else
-                log_error "Failed to download P12 certificate"
-                exit 1
-            fi
-        elif [ -n "$CERT_CER_URL" ] && [ -n "$CERT_KEY_URL" ]; then
-            # Download CER and KEY files and convert to P12
-            if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.cer" "$CERT_CER_URL" && \
-               curl -fsSL -o "$PROJECT_ROOT/ios/Runner.key" "$CERT_KEY_URL"; then
-                log_success "Certificate files downloaded"
-                
-                # Convert to P12
-                openssl pkcs12 -export \
-                    -in "$PROJECT_ROOT/ios/Runner.cer" \
-                    -inkey "$PROJECT_ROOT/ios/Runner.key" \
-                    -out "$PROJECT_ROOT/ios/Runner.p12" \
-                    -passout pass:"$CERT_PASSWORD"
-                log_success "Certificate converted to P12"
-            else
-                log_error "Failed to download certificate files"
-                exit 1
-            fi
-        else
-            log_error "No certificate configuration provided"
-            exit 1
+            log_error "P12 certificate verification failed - invalid password or corrupted file"
+            rm -f "$PROJECT_ROOT/ios/Runner.p12"
+            return 1
         fi
     else
-        log_info "Signing not configured, using development signing"
+        log_error "Failed to download P12 certificate from: $CERT_P12_URL"
+        return 1
     fi
+}
+
+# Method 2: Generate P12 from CER and KEY files
+setup_cer_key_certificate() {
+    log_info "🔐 Attempting CER+KEY certificate setup..."
+    
+    if [ -z "$CERT_CER_URL" ] || [ -z "$CERT_KEY_URL" ]; then
+        log_warning "CERT_CER_URL or CERT_KEY_URL not provided, skipping CER+KEY setup"
+        return 1
+    fi
+    
+    # Use default password if not provided
+    local p12_password="${CERT_PASSWORD:-quikapp_default_password_2024}"
+    
+    log_info "📥 Downloading certificate files..."
+    log_info "📥 CER file from: $CERT_CER_URL"
+    log_info "📥 KEY file from: $CERT_KEY_URL"
+    
+    # Download CER and KEY files
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.cer" "$CERT_CER_URL" && \
+       curl -fsSL -o "$PROJECT_ROOT/ios/Runner.key" "$CERT_KEY_URL"; then
+        log_success "Certificate files downloaded successfully"
+        
+        # Verify CER file
+        if openssl x509 -in "$PROJECT_ROOT/ios/Runner.cer" -text -noout >/dev/null 2>&1; then
+            log_success "CER file verified successfully"
+        else
+            log_error "CER file verification failed - invalid certificate"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+            return 1
+        fi
+        
+        # Verify KEY file
+        if openssl rsa -in "$PROJECT_ROOT/ios/Runner.key" -check -noout >/dev/null 2>&1; then
+            log_success "KEY file verified successfully"
+        else
+            log_error "KEY file verification failed - invalid private key"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+            return 1
+        fi
+        
+        # Convert to P12
+        log_info "🔄 Converting CER+KEY to P12 format..."
+        if openssl pkcs12 -export \
+            -in "$PROJECT_ROOT/ios/Runner.cer" \
+            -inkey "$PROJECT_ROOT/ios/Runner.key" \
+            -out "$PROJECT_ROOT/ios/Runner.p12" \
+            -passout pass:"$p12_password"; then
+            log_success "Certificate converted to P12 successfully"
+            
+            # Clean up temporary files
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+            
+            # Update CERT_PASSWORD for use in build process
+            export CERT_PASSWORD="$p12_password"
+            log_info "Using generated P12 with password: $p12_password"
+            
+            return 0
+        else
+            log_error "Failed to convert certificate to P12 format"
+            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
+            return 1
+        fi
+    else
+        log_error "Failed to download certificate files"
+        return 1
+    fi
+}
+
+# Download and setup provisioning profile
+setup_provisioning_profile() {
+    log_info "📥 Downloading provisioning profile from: $PROFILE_URL"
+    
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner.mobileprovision" "$PROFILE_URL"; then
+        log_success "Provisioning profile downloaded successfully"
+        
+        # Verify provisioning profile
+        if security cms -D -i "$PROJECT_ROOT/ios/Runner.mobileprovision" >/dev/null 2>&1; then
+            log_success "Provisioning profile verified successfully"
+            return 0
+        else
+            log_error "Provisioning profile verification failed"
+            rm -f "$PROJECT_ROOT/ios/Runner.mobileprovision"
+            return 1
+        fi
+    else
+        log_error "Failed to download provisioning profile from: $PROFILE_URL"
+        return 1
+    fi
+}
+
+# Configure signing with fallback logic
+configure_signing() {
+    log_info "🔐 Configuring iOS signing with fallback logic..."
+    
+    # Validate required variables
+    if ! validate_signing_vars; then
+        log_error "Signing validation failed"
+        exit 1
+    fi
+    
+    # Setup provisioning profile first
+    if ! setup_provisioning_profile; then
+        log_error "Provisioning profile setup failed"
+        exit 1
+    fi
+    
+    # Method 1: Try P12 certificate first
+    if setup_p12_certificate; then
+        log_success "🎉 P12 certificate setup completed successfully"
+        return 0
+    fi
+    
+    # Method 2: Fall back to CER+KEY certificate
+    log_warning "P12 setup failed, falling back to CER+KEY method..."
+    if setup_cer_key_certificate; then
+        log_success "🎉 CER+KEY certificate setup completed successfully"
+        return 0
+    fi
+    
+    # If both methods fail
+    log_error "❌ All certificate setup methods failed"
+    log_error "Please provide either:"
+    log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
+    log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
+    exit 1
 }
 
 # Main execution
 main() {
     log_info "🔐 Starting iOS signing configuration for $APP_NAME"
     
-    # Configure signing
+    # Configure signing with fallback logic
     configure_signing
     
     log_success "🎉 iOS signing configuration completed successfully!"
+    log_info "📋 Signing Summary:"
+    log_info "   - Bundle ID: $BUNDLE_ID"
+    log_info "   - Team ID: $APPLE_TEAM_ID"
+    log_info "   - Profile: $PROFILE_URL"
+    if [ -n "$CERT_P12_URL" ]; then
+        log_info "   - Certificate: P12 (direct)"
+    else
+        log_info "   - Certificate: P12 (generated from CER+KEY)"
+    fi
 }
 
 # Run main function

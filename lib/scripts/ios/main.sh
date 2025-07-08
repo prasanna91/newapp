@@ -425,6 +425,15 @@ main() {
     # Send build start notification
     send_email_notification "start"
     
+    # Setup iOS deployment target first (critical for Firebase compatibility)
+    log_info "🎯 Setting up iOS deployment target..."
+    if [ -f "$SCRIPT_DIR/setup_deployment_target.sh" ]; then
+        bash "$SCRIPT_DIR/setup_deployment_target.sh"
+        log_success "iOS deployment target setup completed"
+    else
+        log_warning "Deployment target setup script not found, skipping..."
+    fi
+    
     # Validate environment
     validate_required_vars
     
