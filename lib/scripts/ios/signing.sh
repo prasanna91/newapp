@@ -39,7 +39,7 @@ log_info "🔐 Starting iOS Signing Configuration"
 export CERT_P12_URL="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
 export CERT_CER_URL="${CERT_CER_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer}"
 export CERT_KEY_URL="${CERT_KEY_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key}"
-export CERT_PASSWORD="${CERT_PASSWORD:-qwerty123}"
+export CERT_PASSWORD="${CERT_PASSWORD:-password}"
 export PROFILE_URL="${PROFILE_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision}"
 export APPLE_TEAM_ID="${APPLE_TEAM_ID:-9H2AD7NQ49}"
 export BUNDLE_ID="${BUNDLE_ID:-com.twinklub.twinklub}"
@@ -90,13 +90,75 @@ validate_signing_vars() {
     return 0
 }
 
+# Enhanced certificate import function
+import_certificate_to_keychain() {
+    local p12_file="$1"
+    local password="$2"
+    local cert_name="$3"
+    
+    log_info "🔐 Importing $cert_name into keychain..."
+    
+    # Try multiple keychain import methods
+    local import_methods=(
+        "security import '$p12_file' -k login.keychain -P '$password' -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security"
+        "security import '$p12_file' -k /Library/Keychains/System.keychain -P '$password' -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security"
+        "security import '$p12_file' -P '$password' -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security"
+        "security import '$p12_file' -P '$password'"
+    )
+    
+    # Try to unlock keychains first
+    log_info "🔓 Attempting to unlock keychains..."
+    security unlock-keychain -p "" login.keychain 2>/dev/null || true
+    security unlock-keychain -p "" /Library/Keychains/System.keychain 2>/dev/null || true
+    
+    # Try each import method
+    for i in "${!import_methods[@]}"; do
+        local method="${import_methods[$i]}"
+        log_info "🔐 Trying import method $((i+1))..."
+        
+        if eval "$method" >/dev/null 2>&1; then
+            log_success "$cert_name imported successfully with method $((i+1))"
+            return 0
+        else
+            log_warning "Import method $((i+1)) failed, trying next..."
+        fi
+    done
+    
+    # If all methods fail, try a more aggressive approach
+    log_warning "All standard import methods failed, trying aggressive approach..."
+    
+    # Create a temporary keychain for import
+    local temp_keychain="$PROJECT_ROOT/ios/temp.keychain"
+    local temp_password="temp123"
+    
+    if security create-keychain -p "$temp_password" "$temp_keychain" >/dev/null 2>&1; then
+        log_info "Created temporary keychain for import..."
+        
+        if security import "$p12_file" -k "$temp_keychain" -P "$password" >/dev/null 2>&1; then
+            log_success "$cert_name imported into temporary keychain"
+            
+            # Try to merge with system keychain
+            if security list-keychains -s "$temp_keychain" >/dev/null 2>&1; then
+                log_success "Temporary keychain added to search list"
+                return 0
+            fi
+        fi
+        
+        # Clean up temporary keychain
+        security delete-keychain "$temp_keychain" 2>/dev/null || true
+    fi
+    
+    log_error "Failed to import $cert_name into any keychain"
+    return 1
+}
+
 # Method 1: Use P12 certificate directly
 setup_p12_certificate() {
     log_info "🔐 Attempting P12 certificate setup..."
     
     # Use default values if environment variables are not set
     local p12_url="${CERT_P12_URL:-https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12}"
-    local p12_password="${CERT_PASSWORD:-qwerty123}"
+    local p12_password="${CERT_PASSWORD:-password}"
     
     if [ -z "$p12_url" ]; then
         log_warning "CERT_P12_URL not provided and no default available, skipping P12 setup"
@@ -118,50 +180,14 @@ setup_p12_certificate() {
         if openssl pkcs12 -info -in "$PROJECT_ROOT/ios/Runner.p12" -noout -passin pass:"$p12_password" >/dev/null 2>&1; then
             log_success "P12 certificate verified successfully"
             
-            # Import P12 into keychain
-            log_info "🔐 Importing P12 certificate into keychain..."
-            
-            # Try importing into the system keychain directly
-            log_info "🔐 Importing P12 certificate into system keychain..."
-            
-            # First, try to unlock the keychain if needed
-            log_info "🔓 Attempting to unlock keychain..."
-            security unlock-keychain -p "" login.keychain 2>/dev/null || true
-            
-            # Try importing with different approaches
-            local import_success=false
-            
-            # Method 1: Import with explicit keychain
-            if security import "$PROJECT_ROOT/ios/Runner.p12" -k login.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                log_success "P12 certificate imported into login.keychain successfully"
-                import_success=true
+            # Import P12 into keychain using enhanced method
+            if import_certificate_to_keychain "$PROJECT_ROOT/ios/Runner.p12" "$p12_password" "P12 certificate"; then
+                return 0
             else
-                log_warning "Failed to import into login.keychain, trying system keychain..."
-                
-                # Method 2: Import into system keychain
-                if security import "$PROJECT_ROOT/ios/Runner.p12" -k /Library/Keychains/System.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                    log_success "P12 certificate imported into system keychain successfully"
-                    import_success=true
-                else
-                    log_warning "Failed to import into system keychain, trying default import..."
-                    
-                    # Method 3: Import without specifying keychain (uses default)
-                    if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                        log_success "P12 certificate imported into default keychain successfully"
-                        import_success=true
-                    else
-                        log_warning "Failed to import with default method, trying without trust settings..."
-                        
-                        # Method 4: Import without trust settings
-                        if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" >/dev/null 2>&1; then
-                            log_success "P12 certificate imported successfully (without trust settings)"
-                            import_success=true
-                        fi
-                    fi
-                fi
+                log_error "P12 certificate import failed"
+                rm -f "$PROJECT_ROOT/ios/Runner.p12"
+                return 1
             fi
-            
-            return 0
         else
             log_error "P12 certificate verification failed - invalid password or corrupted file"
             rm -f "$PROJECT_ROOT/ios/Runner.p12"
@@ -225,63 +251,21 @@ setup_cer_key_certificate() {
             -passout pass:"$p12_password"; then
             log_success "Certificate converted to P12 successfully"
             
-            # Import P12 into keychain
-            log_info "🔐 Importing generated P12 certificate into keychain..."
-            
-            # Try importing into the system keychain directly
-            log_info "🔐 Importing generated P12 certificate into system keychain..."
-            
-            # First, try to unlock the keychain if needed
-            log_info "🔓 Attempting to unlock keychain..."
-            security unlock-keychain -p "" login.keychain 2>/dev/null || true
-            
-            # Try importing with different approaches
-            local import_success=false
-            
-            # Method 1: Import with explicit keychain
-            if security import "$PROJECT_ROOT/ios/Runner.p12" -k login.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                log_success "Generated P12 certificate imported into login.keychain successfully"
-                import_success=true
-            else
-                log_warning "Failed to import into login.keychain, trying system keychain..."
+            # Import P12 into keychain using enhanced method
+            if import_certificate_to_keychain "$PROJECT_ROOT/ios/Runner.p12" "$p12_password" "Generated P12 certificate"; then
+                # Clean up temporary files
+                rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
                 
-                # Method 2: Import into system keychain
-                if security import "$PROJECT_ROOT/ios/Runner.p12" -k /Library/Keychains/System.keychain -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                    log_success "Generated P12 certificate imported into system keychain successfully"
-                    import_success=true
-                else
-                    log_warning "Failed to import into system keychain, trying default import..."
-                    
-                    # Method 3: Import without specifying keychain (uses default)
-                    if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null 2>&1; then
-                        log_success "Generated P12 certificate imported into default keychain successfully"
-                        import_success=true
-                    else
-                        log_warning "Failed to import with default method, trying without trust settings..."
-                        
-                        # Method 4: Import without trust settings
-                        if security import "$PROJECT_ROOT/ios/Runner.p12" -P "$p12_password" >/dev/null 2>&1; then
-                            log_success "Generated P12 certificate imported successfully (without trust settings)"
-                            import_success=true
-                        fi
-                    fi
-                fi
-            fi
-            
-            if [ "$import_success" = false ]; then
-                log_error "Failed to import generated P12 certificate into any keychain"
+                # Update CERT_PASSWORD for use in build process
+                export CERT_PASSWORD="$p12_password"
+                log_info "Using generated P12 with password: $p12_password"
+                
+                return 0
+            else
+                log_error "Generated P12 certificate import failed"
                 rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
                 return 1
             fi
-            
-            # Clean up temporary files
-            rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
-            
-            # Update CERT_PASSWORD for use in build process
-            export CERT_PASSWORD="$p12_password"
-            log_info "Using generated P12 with password: $p12_password"
-            
-            return 0
         else
             log_error "Failed to convert certificate to P12 format"
             rm -f "$PROJECT_ROOT/ios/Runner.cer" "$PROJECT_ROOT/ios/Runner.key"
@@ -334,26 +318,44 @@ setup_provisioning_profile() {
     fi
 }
 
-# Verify certificates in keychain
+# Enhanced certificate verification
 verify_certificates() {
     log_info "🔍 Verifying certificates in keychain..."
     
     # List available certificates with detailed output
     log_info "📋 Available code signing identities:"
-    if security find-identity -v -p codesigning; then
+    local cert_output=$(security find-identity -v -p codesigning 2>/dev/null || echo "")
+    
+    if [ -n "$cert_output" ]; then
+        echo "$cert_output"
         log_success "Certificates found in keychain"
         
         # Check for valid identities specifically
-        local valid_count=$(security find-identity -v -p codesigning | grep -c "valid identities found" || echo "0")
+        local valid_count=$(echo "$cert_output" | grep -c "valid identities found" || echo "0")
         if [ "$valid_count" -gt 0 ]; then
             log_success "Valid code signing identities found"
+            
+            # List the actual identities
+            log_info "📋 Valid code signing identities:"
+            security find-identity -v -p codesigning | grep -E "^[[:space:]]*[0-9]+:" || true
+            
             return 0
         else
             log_warning "Certificates found but no valid identities for code signing"
+            
+            # Try to list all identities for debugging
+            log_info "📋 All identities in keychain:"
+            security find-identity -v -p codesigning || true
+            
             return 1
         fi
     else
         log_error "No certificates found in keychain"
+        
+        # Try to list all keychains for debugging
+        log_info "📋 Available keychains:"
+        security list-keychains || true
+        
         return 1
     fi
 }
