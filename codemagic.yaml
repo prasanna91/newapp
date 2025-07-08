@@ -106,8 +106,8 @@ ios_build_acceleration: &ios_build_acceleration
   XCODE_OPTIMIZATION: "true"
   XCODE_CLEAN_BUILD: "true"
   XCODE_PARALLEL_BUILD: "true"
-  # iOS Deployment Target (Firebase requires 14.0+)
-          IOS_DEPLOYMENT_TARGET: "15.0"
+  # iOS Deployment Target (Firebase requires 15.0+)
+  IOS_DEPLOYMENT_TARGET: "15.0"
 
 # 🍎 iOS Signing Configuration Block
 ios_signing_config: &ios_signing_config

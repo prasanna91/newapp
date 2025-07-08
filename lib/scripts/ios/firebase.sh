@@ -37,18 +37,42 @@ log_info "🔥 Starting iOS Firebase Configuration"
 
 # Configure Firebase
 configure_firebase() {
-    if [ "${PUSH_NOTIFY:-false}" = "true" ] && [ -n "$FIREBASE_CONFIG_IOS" ]; then
-        log_info "🔥 Configuring Firebase for iOS..."
+    log_info "🔥 Checking Firebase configuration..."
+    
+    # Check if push notifications are enabled
+    if [ "${PUSH_NOTIFY:-false}" != "true" ]; then
+        log_info "Push notifications disabled (PUSH_NOTIFY=false), skipping Firebase setup"
+        return 0
+    fi
+    
+    # Check if Firebase config is provided
+    if [ -z "$FIREBASE_CONFIG_IOS" ]; then
+        log_error "PUSH_NOTIFY is true but FIREBASE_CONFIG_IOS is not provided"
+        log_error "Please provide FIREBASE_CONFIG_IOS environment variable"
+        exit 1
+    fi
+    
+    log_info "🔥 Configuring Firebase for iOS..."
+    
+    # Create Runner directory if it doesn't exist
+    mkdir -p "$PROJECT_ROOT/ios/Runner"
+    
+    # Download Firebase config
+    if curl -fsSL -o "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" "$FIREBASE_CONFIG_IOS"; then
+        log_success "Firebase configuration downloaded successfully"
         
-        # Download Firebase config
-        if curl -fsSL -o "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" "$FIREBASE_CONFIG_IOS"; then
-            log_success "Firebase configuration downloaded"
+        # Validate the downloaded file
+        if [ -f "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" ]; then
+            local file_size=$(du -h "$PROJECT_ROOT/ios/Runner/GoogleService-Info.plist" | cut -f1)
+            log_success "GoogleService-Info.plist created (${file_size})"
         else
-            log_error "Failed to download Firebase configuration"
+            log_error "Firebase config file was not created"
             exit 1
         fi
     else
-        log_info "Firebase not enabled or configuration not provided"
+        log_error "Failed to download Firebase configuration from: $FIREBASE_CONFIG_IOS"
+        log_error "Please check the URL and ensure it's accessible"
+        exit 1
     fi
 }
 
