@@ -16,5 +16,13 @@
     <string>none</string>
     <key>distributionBundleIdentifier</key>
     <string>com.twinklub.twinklub</string>
+    <key>uploadToAppStore</key>
+    <true/>
+    <key>appStoreConnectKeyIdentifier</key>
+    <string>S95LCWAH99</string>
+    <key>appStoreConnectKeyPath</key>
+    <string>/tmp/AuthKey_S95LCWAH99.p8</string>
+    <key>appStoreConnectIssuerId</key>
+    <string>a99a2ebd-ed3e-4117-9f97-f195823774a7</string>
 </dict>
 </plist>
