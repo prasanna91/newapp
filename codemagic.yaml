@@ -445,36 +445,52 @@ workflows:
         <<: *ios_build_acceleration
         <<: *app_config
         WORKFLOW_ID: "ios-workflow"
-        BUNDLE_ID: $BUNDLE_ID
+        BUNDLE_ID: ${BUNDLE_ID:-"com.twinklub.twinklub"}
 
         # 🔧 Feature Flags
-        PUSH_NOTIFY: $PUSH_NOTIFY
-        IS_DOMAIN_URL: $IS_DOMAIN_URL
+        PUSH_NOTIFY: ${PUSH_NOTIFY:-"false"}
+        IS_DOMAIN_URL: ${IS_DOMAIN_URL:-"false"}
         <<: *feature_flags
         <<: *permissions
         <<: *ui_config
 
         # 🔥 Firebase Configuration
-        FIREBASE_CONFIG_IOS: $FIREBASE_CONFIG_IOS
+        FIREBASE_CONFIG_IOS: ${FIREBASE_CONFIG_IOS:-""}
 
         # 🍎 iOS Signing Configuration (Universal - All Profile Types)
-        <<: *ios_signing_config
+        # Use default values if not provided
+        CERT_PASSWORD: ${CERT_PASSWORD:-"qwerty123"}
+        PROFILE_URL: ${PROFILE_URL:-"https://raw.githubusercontent.com/prasanna91/QuikApp/main/Twinklub_AppStore.mobileprovision"}
+        CERT_P12_URL: ${CERT_P12_URL:-"https://raw.githubusercontent.com/prasanna91/QuikApp/main/Certificates.p12"}
+        CERT_CER_URL: ${CERT_CER_URL:-"https://raw.githubusercontent.com/prasanna91/QuikApp/main/ios_distribution.cer"}
+        CERT_KEY_URL: ${CERT_KEY_URL:-"https://raw.githubusercontent.com/prasanna91/QuikApp/main/private.key"}
+        PROFILE_TYPE: ${PROFILE_TYPE:-"app-store"}
+        APPLE_TEAM_ID: ${APPLE_TEAM_ID:-"9H2AD7NQ49"}
+        APNS_KEY_ID: ${APNS_KEY_ID:-""}
+        APNS_AUTH_KEY_URL: ${APNS_AUTH_KEY_URL:-""}
+        APP_STORE_CONNECT_KEY_IDENTIFIER: ${APP_STORE_CONNECT_KEY_IDENTIFIER:-""}
+        APP_STORE_CONNECT_ISSUER_ID: ${APP_STORE_CONNECT_ISSUER_ID:-""}
+        APP_STORE_CONNECT_API_KEY_PATH: ${APP_STORE_CONNECT_API_KEY_PATH:-""}
+        IS_TESTFLIGHT: ${IS_TESTFLIGHT:-"false"}
 
         # 📱 iOS Distribution Options
-        <<: *ios_distribution_options
-
-        # 🔧 Set default PROFILE_TYPE if not provided
-        PROFILE_TYPE: ${PROFILE_TYPE:-"app-store"}
+        ENABLE_DEVICE_SPECIFIC_BUILDS: ${ENABLE_DEVICE_SPECIFIC_BUILDS:-"false"}
+        INSTALL_URL: ${INSTALL_URL:-""}
+        DISPLAY_IMAGE_URL: ${DISPLAY_IMAGE_URL:-""}
+        FULL_SIZE_IMAGE_URL: ${FULL_SIZE_IMAGE_URL:-""}
+        THINNING: ${THINNING:-"none"}
 
         # 🍎 iOS Development Options
-        <<: *ios_development_options
+        ENABLE_DEBUG_BUILD: ${ENABLE_DEBUG_BUILD:-"false"}
+        ENABLE_DEVICE_LOGGING: ${ENABLE_DEVICE_LOGGING:-"false"}
+        ENABLE_DEBUG_SYMBOLS: ${ENABLE_DEBUG_SYMBOLS:-"true"}
 
         # 📧 Email Configuration (for notifications)
-        ENABLE_EMAIL_NOTIFICATIONS: $ENABLE_EMAIL_NOTIFICATIONS
-        EMAIL_SMTP_SERVER: $EMAIL_SMTP_SERVER
-        EMAIL_SMTP_PORT: $EMAIL_SMTP_PORT
-        EMAIL_SMTP_USER: $EMAIL_SMTP_USER
-        EMAIL_SMTP_PASS: $EMAIL_SMTP_PASS
+        ENABLE_EMAIL_NOTIFICATIONS: ${ENABLE_EMAIL_NOTIFICATIONS:-"true"}
+        EMAIL_SMTP_SERVER: ${EMAIL_SMTP_SERVER:-"smtp.gmail.com"}
+        EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-"587"}
+        EMAIL_SMTP_USER: ${EMAIL_SMTP_USER:-"prasannasrie@gmail.com"}
+        EMAIL_SMTP_PASS: ${EMAIL_SMTP_PASS:-"lrnu krfm aarp urux"}
 
         # 🔧 Build Environment Variables
         CM_BUILD_ID: $CM_BUILD_ID

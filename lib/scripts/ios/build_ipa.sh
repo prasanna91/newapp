@@ -75,10 +75,19 @@ build_app() {
     
     # Verify certificates are available
     log_info "🔍 Verifying certificates before build..."
-    if ! security find-identity -v -p codesigning | grep -q "valid identities found"; then
+    log_info "📋 Checking for valid code signing identities..."
+    
+    # Get detailed certificate information
+    local cert_output=$(security find-identity -v -p codesigning 2>&1 || true)
+    log_info "Certificate check output:"
+    echo "$cert_output"
+    
+    if echo "$cert_output" | grep -q "valid identities found"; then
+        log_success "Valid code signing certificates found"
+    else
         log_error "No valid code signing certificates found in keychain"
-        log_info "Available certificates:"
-        security find-identity -v -p codesigning || true
+        log_error "This indicates that the signing setup failed or certificates were not properly imported"
+        log_error "Please check the signing script output above for any errors"
         exit 1
     fi
     

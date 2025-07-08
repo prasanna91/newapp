@@ -44,6 +44,12 @@ validate_signing_vars() {
     local team_id="${APPLE_TEAM_ID:-9H2AD7NQ49}"
     local bundle_id="${BUNDLE_ID:-com.twinklub.twinklub}"
     
+    log_info "📋 Signing Configuration:"
+    log_info "   - Profile URL: $profile_url"
+    log_info "   - Team ID: $team_id"
+    log_info "   - Bundle ID: $bundle_id"
+    log_info "   - Profile Type: ${PROFILE_TYPE:-app-store}"
+    
     # Check for required variables
     if [ -z "$profile_url" ]; then
         log_error "PROFILE_URL is required for iOS signing"
@@ -281,10 +287,20 @@ setup_provisioning_profile() {
 verify_certificates() {
     log_info "🔍 Verifying certificates in keychain..."
     
-    # List available certificates
+    # List available certificates with detailed output
+    log_info "📋 Available code signing identities:"
     if security find-identity -v -p codesigning; then
         log_success "Certificates found in keychain"
-        return 0
+        
+        # Check for valid identities specifically
+        local valid_count=$(security find-identity -v -p codesigning | grep -c "valid identities found" || echo "0")
+        if [ "$valid_count" -gt 0 ]; then
+            log_success "Valid code signing identities found"
+            return 0
+        else
+            log_warning "Certificates found but no valid identities for code signing"
+            return 1
+        fi
     else
         log_error "No certificates found in keychain"
         return 1
@@ -308,30 +324,38 @@ configure_signing() {
     fi
     
     # Method 1: Try P12 certificate first
+    log_info "🔐 Attempting P12 certificate setup..."
     if setup_p12_certificate; then
         log_success "🎉 P12 certificate setup completed successfully"
-        return 0
-    fi
-    
-    # Method 2: Fall back to CER+KEY certificate
-    log_warning "P12 setup failed, falling back to CER+KEY method..."
-    if setup_cer_key_certificate; then
-        log_success "🎉 CER+KEY certificate setup completed successfully"
     else
-        # If both methods fail
-        log_error "❌ All certificate setup methods failed"
-        log_error "Please provide either:"
-        log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
-        log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
-        exit 1
+        # Method 2: Fall back to CER+KEY certificate
+        log_warning "P12 setup failed, falling back to CER+KEY method..."
+        if setup_cer_key_certificate; then
+            log_success "🎉 CER+KEY certificate setup completed successfully"
+        else
+            # If both methods fail
+            log_error "❌ All certificate setup methods failed"
+            log_error "Please provide either:"
+            log_error "  - CERT_P12_URL + CERT_PASSWORD, or"
+            log_error "  - CERT_CER_URL + CERT_KEY_URL (CERT_PASSWORD optional)"
+            log_error "Current environment:"
+            log_error "  - CERT_P12_URL: ${CERT_P12_URL:-not set}"
+            log_error "  - CERT_CER_URL: ${CERT_CER_URL:-not set}"
+            log_error "  - CERT_KEY_URL: ${CERT_KEY_URL:-not set}"
+            log_error "  - CERT_PASSWORD: ${CERT_PASSWORD:-not set}"
+            exit 1
+        fi
     fi
     
     # Verify certificates are properly installed
+    log_info "🔍 Verifying certificates after setup..."
     if ! verify_certificates; then
-        log_error "Certificate verification failed"
+        log_error "Certificate verification failed after setup"
+        log_error "This may indicate an issue with certificate import or keychain access"
         exit 1
     fi
     
+    log_success "✅ All signing components verified successfully"
     return 0
 }
 
