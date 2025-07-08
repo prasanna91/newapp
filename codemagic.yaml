@@ -461,6 +461,9 @@ workflows:
         # 📱 iOS Distribution Options
         <<: *ios_distribution_options
 
+        # 🔧 Set default PROFILE_TYPE if not provided
+        PROFILE_TYPE: ${PROFILE_TYPE:-"app-store"}
+
         # 🍎 iOS Development Options
         <<: *ios_development_options
 
@@ -592,6 +595,15 @@ workflows:
           fi
 
           echo "✅ Build process components validated"
+
+          # Run App Store Connect validation
+          echo "🍎 Running App Store Connect validation..."
+          if [ -f "$PROJECT_ROOT/lib/scripts/ios/validate_appstore.sh" ]; then
+            bash "$PROJECT_ROOT/lib/scripts/ios/validate_appstore.sh"
+            echo "✅ App Store Connect validation completed"
+          else
+            echo "⚠️ App Store Connect validation script not found"
+          fi
       - name: Setup Fastlane
         script: |
           echo "📦 Installing fastlane..."
@@ -912,6 +924,9 @@ workflows:
 
         # 🍎 iOS Development Options
         <<: *ios_development_options
+
+        # 🔧 Set default PROFILE_TYPE if not provided
+        PROFILE_TYPE: ${PROFILE_TYPE:-"app-store"}
 
     scripts:
       - name: Pre-build Setup

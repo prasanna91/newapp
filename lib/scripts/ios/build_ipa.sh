@@ -126,6 +126,19 @@ EOF
     <key>distributionBundleIdentifier</key>
     <string>$BUNDLE_ID</string>
 EOF
+            # Add App Store Connect API authentication if available
+            if [ -n "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ] && [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ] && [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+                cat >> "$export_options_file" << EOF
+    <key>uploadToAppStore</key>
+    <true/>
+    <key>appStoreConnectKeyIdentifier</key>
+    <string>$APP_STORE_CONNECT_KEY_IDENTIFIER</string>
+    <key>appStoreConnectKeyPath</key>
+    <string>$APP_STORE_CONNECT_API_KEY_PATH</string>
+    <key>appStoreConnectIssuerId</key>
+    <string>$APP_STORE_CONNECT_ISSUER_ID</string>
+EOF
+            fi
             ;;
         "ad-hoc")
             cat >> "$export_options_file" << EOF

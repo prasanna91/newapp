@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🚀 iOS Main Build Script for QuikApp
-# This script orchestrates the complete iOS build process
+# 🍎 iOS Auto Build Script for QuikApp
+# This script builds iOS apps with dynamic signing and automatic profile type detection
 
 set -e
 
@@ -40,7 +40,7 @@ UTILS_DIR="$SCRIPT_DIR/../utils"
 # Build start time for duration tracking
 BUILD_START_TIME=$(date +%s)
 
-log_info "🚀 Starting iOS Build Process"
+log_info "🍎 Starting iOS Auto Build Process"
 log_info "📁 Project Root: $PROJECT_ROOT"
 log_info "📁 Script Directory: $SCRIPT_DIR"
 
@@ -259,7 +259,7 @@ create_export_options() {
     <key>method</key>
     <string>$PROFILE_TYPE</string>
     <key>teamID</key>
-    <string>$APPLE_TEAM_ID</string>
+    <string>${APPLE_TEAM_ID:-}</string>
     <key>uploadBitcode</key>
     <false/>
     <key>uploadSymbols</key>
@@ -295,16 +295,20 @@ EOF
             cat >> "$export_options_file" << EOF
     <key>distributionBundleIdentifier</key>
     <string>$BUNDLE_ID</string>
+EOF
+            if [ -n "${INSTALL_URL:-}" ]; then
+                cat >> "$export_options_file" << EOF
     <key>manifest</key>
     <dict>
         <key>appURL</key>
         <string>$INSTALL_URL</string>
         <key>displayImageURL</key>
-        <string>$DISPLAY_IMAGE_URL</string>
+        <string>${DISPLAY_IMAGE_URL:-}</string>
         <key>fullSizeImageURL</key>
-        <string>$FULL_SIZE_IMAGE_URL</string>
+        <string>${FULL_SIZE_IMAGE_URL:-}</string>
     </dict>
 EOF
+            fi
             ;;
         "enterprise")
             cat >> "$export_options_file" << EOF
@@ -362,7 +366,7 @@ generate_summary() {
     local summary_file="$PROJECT_ROOT/output/ios/BUILD_SUMMARY.txt"
     
     cat > "$summary_file" << EOF
-# iOS Build Summary
+# iOS Auto Build Summary
 
 ## Build Information
 - App Name: ${APP_NAME}
@@ -420,7 +424,7 @@ send_email_notification() {
 
 # Main execution
 main() {
-    log_info "🚀 Starting iOS build process for $APP_NAME"
+    log_info "🚀 Starting iOS auto build process for $APP_NAME"
     
     # Send build start notification
     send_email_notification "start"
@@ -453,7 +457,7 @@ main() {
     copy_artifacts
     generate_summary
     
-    log_success "🎉 iOS build completed successfully!"
+    log_success "🎉 iOS auto build completed successfully!"
     log_info "📦 Artifacts available in: $PROJECT_ROOT/output/ios/"
     
     # Send build success notification
@@ -465,7 +469,7 @@ main() {
     main "$@"
 } || {
     local exit_code=$?
-    local error_message="iOS build failed with exit code: $exit_code"
+    local error_message="iOS auto build failed with exit code: $exit_code"
     log_error "$error_message"
     send_email_notification "failed" "$error_message"
     exit $exit_code
