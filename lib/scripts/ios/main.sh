@@ -451,16 +451,37 @@ main() {
     
     # Build and export using the dedicated script
     if [ -f "$SCRIPT_DIR/build_ipa.sh" ]; then
-        bash "$SCRIPT_DIR/build_ipa.sh"
+        if ! bash "$SCRIPT_DIR/build_ipa.sh"; then
+            log_error "Build script failed!"
+            exit 1
+        fi
     else
         # Fallback to built-in build process
         build_app
         export_ipa
     fi
     
+    # Validate IPA was generated
+    if [ ! -f "$PROJECT_ROOT/output/ios/Runner.ipa" ]; then
+        log_error "Build completed but no IPA was generated!"
+        log_error "This indicates a build failure that was not properly detected."
+        exit 1
+    fi
+    
     # Finalize
     copy_artifacts
     generate_summary
+    
+    # Validate build
+    log_info "🔍 Running build validation..."
+    if [ -f "$SCRIPT_DIR/validate_build.sh" ]; then
+        if ! bash "$SCRIPT_DIR/validate_build.sh"; then
+            log_error "Build validation failed!"
+            exit 1
+        fi
+    else
+        log_warning "Build validation script not found, skipping validation..."
+    fi
     
     log_success "🎉 iOS build completed successfully!"
     log_info "📦 Artifacts available in: $PROJECT_ROOT/output/ios/"
@@ -476,6 +497,13 @@ main() {
     local exit_code=$?
     local error_message="iOS build failed with exit code: $exit_code"
     log_error "$error_message"
+    
+    # Check if IPA exists despite the error
+    if [ ! -f "$PROJECT_ROOT/output/ios/Runner.ipa" ]; then
+        error_message="$error_message - No IPA generated"
+        log_error "No IPA file found in output/ios/"
+    fi
+    
     send_email_notification "failed" "$error_message"
     exit $exit_code
 } 

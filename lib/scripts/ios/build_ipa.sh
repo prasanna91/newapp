@@ -28,6 +28,9 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Error handling
+trap 'log_error "Build failed at line $LINENO. Exit code: $?"; exit 1' ERR
+
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -51,12 +54,18 @@ build_app() {
     # Install pods
     log_info "📦 Installing CocoaPods..."
     cd ios
-    pod install --repo-update
+    if ! pod install --repo-update; then
+        log_error "CocoaPods installation failed!"
+        exit 1
+    fi
     cd ..
     
-    # Build archive
-    log_info "📱 Building iOS archive..."
-    flutter build ios --release --no-codesign
+    # Build IPA with error handling
+    log_info "📱 Building iOS IPA..."
+    if ! flutter build ipa --release --export-options-plist=ios/ExportOptions.plist; then
+        log_error "Flutter build failed!"
+        exit 1
+    fi
     
     log_success "Build completed"
 }

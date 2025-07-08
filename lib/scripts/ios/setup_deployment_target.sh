@@ -13,7 +13,7 @@ error() {
 log "Setting up iOS deployment target..."
 
 # Default deployment target for Firebase compatibility
-DEFAULT_DEPLOYMENT_TARGET="14.0"
+DEFAULT_DEPLOYMENT_TARGET="15.0"
 DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-$DEFAULT_DEPLOYMENT_TARGET}"
 
 log "Using iOS deployment target: $DEPLOYMENT_TARGET"
