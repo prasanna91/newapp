@@ -1,9 +1,8 @@
 #!/bin/bash
+set -euo pipefail
 
 # 📱 iOS Build IPA Script for QuikApp
 # This script handles the actual iOS build and IPA export process
-
-set -e
 
 # Color codes for output
 RED='\033[0;31m'
